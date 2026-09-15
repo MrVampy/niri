@@ -500,6 +500,9 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                         let description = parts.join(" and ");
                         println!("Screenshot captured: {description}");
                     }
+                    Event::Barrier { id } => {
+                        println!("Event barrier: {id}");
+                    }
                     Event::CastsChanged { casts } => {
                         println!("Casts changed: {casts:?}");
                     }

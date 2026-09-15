@@ -112,6 +112,19 @@ impl IpcServer {
         })
     }
 
+    fn event_barrier(&self, id: String) -> Response {
+        let focused_window = self
+            .event_stream_state
+            .borrow()
+            .windows
+            .windows
+            .values()
+            .find(|window| window.is_focused)
+            .cloned();
+        self.send_event(Event::Barrier { id: id.clone() });
+        Response::EventStreamBarrier { id, focused_window }
+    }
+
     fn send_event(&self, event: Event) {
         let mut streams = self.event_streams.borrow_mut();
         let mut to_remove = Vec::new();
@@ -334,6 +347,27 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let layout = state.keyboard_layouts.keyboard_layouts.clone();
             let layout = layout.expect("keyboard layouts should be set at startup");
             Response::KeyboardLayouts(layout)
+        }
+        Request::EventStreamBarrier { id } => {
+            if id.is_empty()
+                || id.len() > 128
+                || !id
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+            {
+                return Err("invalid event barrier identity".into());
+            }
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                state.ipc_refresh_outputs();
+                state.ipc_refresh_layout();
+                if let Some(server) = state.niri.ipc_server.as_ref() {
+                    let _ = tx.send_blocking(server.event_barrier(id));
+                }
+            });
+            rx.recv()
+                .await
+                .map_err(|_| String::from("event barrier was interrupted"))?
         }
         Request::FocusedWindow => {
             let state = ctx.event_stream_state.borrow();
@@ -983,3 +1017,44 @@ impl State {
 #[cfg(test)]
 #[path = "server/outputs_tests.rs"]
 mod namespace_ipc_outputs;
+
+#[cfg(test)]
+mod namespace_ipc_barrier {
+    use super::*;
+
+    #[test]
+    fn a_barrier_follows_earlier_events_on_every_stream() {
+        let (first, first_events) = async_channel::bounded(4);
+        let (second, second_events) = async_channel::bounded(4);
+        let (disconnect, _) = async_channel::bounded(1);
+        let server = IpcServer {
+            socket_path: None,
+            event_streams: Rc::new(RefCell::new(vec![
+                EventStreamSender {
+                    events: first,
+                    disconnect: disconnect.clone(),
+                },
+                EventStreamSender {
+                    events: second,
+                    disconnect,
+                },
+            ])),
+            event_stream_state: Rc::new(RefCell::new(EventStreamState::default())),
+        };
+        server.send_event(Event::WindowFocusChanged { id: None });
+        let response = server.event_barrier("operation-marker".into());
+        assert!(
+            matches!(response, Response::EventStreamBarrier { id, focused_window: None } if id == "operation-marker")
+        );
+        for events in [first_events, second_events] {
+            assert!(matches!(
+                events.try_recv().unwrap(),
+                Event::WindowFocusChanged { id: None }
+            ));
+            assert!(
+                matches!(events.try_recv().unwrap(), Event::Barrier { id } if id == "operation-marker")
+            );
+            assert!(events.try_recv().is_err());
+        }
+    }
+}

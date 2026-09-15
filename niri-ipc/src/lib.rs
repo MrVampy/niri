@@ -81,6 +81,9 @@ pub enum Request {
     FocusedOutput,
     /// Request information about the focused window.
     FocusedWindow,
+    EventStreamBarrier {
+        id: String,
+    },
     /// Request picking a window and get its information.
     PickWindow,
     /// Request picking a color from the screen.
@@ -155,6 +158,10 @@ pub enum Response {
     FocusedOutput(Option<Output>),
     /// Information about the focused window.
     FocusedWindow(Option<Window>),
+    EventStreamBarrier {
+        id: String,
+        focused_window: Option<Window>,
+    },
     /// Information about the picked window.
     PickedWindow(Option<Window>),
     /// Information about the picked color.
@@ -1688,6 +1695,9 @@ pub enum CastTarget {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum Event {
+    Barrier {
+        id: String,
+    },
     /// The complete connected-output configuration, including disabled outputs.
     OutputsChanged {
         /// Replaces the previous output configuration.
