@@ -1721,6 +1721,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn move_window_up_by_id(&mut self, window: &W::Id) {
+        self.move_window_vertically_by_id(window, -1);
+    }
+
+    pub fn move_window_down_by_id(&mut self, window: &W::Id) {
+        self.move_window_vertically_by_id(window, 1);
+    }
+
+    fn move_window_vertically_by_id(&mut self, window: &W::Id, direction: isize) {
         let Some((column, source)) = self.columns.iter_mut().find_map(|column| {
             let source = column
                 .tiles
@@ -1730,10 +1738,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }) else {
             return;
         };
-        if source == 0 {
+        let Some(target) = source
+            .checked_add_signed(direction)
+            .filter(|target| *target < column.tiles.len())
+        else {
             return;
-        }
-        let target = source - 1;
+        };
         let source_y = column.tile_offset(source).y;
         let target_y = column.tile_offset(target).y;
         column.tiles.swap(source, target);
@@ -2251,12 +2261,39 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.set_column_display(display);
     }
 
+    pub fn set_column_width_by_id(&mut self, window: &W::Id, change: SizeChange) {
+        let Some(column) = self
+            .columns
+            .iter_mut()
+            .find(|column| column.tiles.iter().any(|tile| tile.window().id() == window))
+        else {
+            return;
+        };
+        column.set_column_width(change, None, true);
+        cancel_resize_for_column(&mut self.interactive_resize, column);
+    }
+
+    pub fn set_column_display_by_id(&mut self, window: &W::Id, display: ColumnDisplay) {
+        let Some(index) = self
+            .columns
+            .iter()
+            .position(|column| column.tiles.iter().any(|tile| tile.window().id() == window))
+        else {
+            return;
+        };
+        self.set_column_display_at(index, display);
+    }
+
     pub fn set_column_display(&mut self, display: ColumnDisplay) {
+        self.set_column_display_at(self.active_column_idx, display);
+    }
+
+    fn set_column_display_at(&mut self, index: usize, display: ColumnDisplay) {
         if self.columns.is_empty() {
             return;
         }
 
-        let col = &mut self.columns[self.active_column_idx];
+        let col = &mut self.columns[index];
         if col.display_mode == display {
             return;
         }
@@ -2265,7 +2302,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         col.set_column_display(display);
 
         // With place_within_column, the tab indicator changes the column size immediately.
-        self.data[self.active_column_idx].update(col);
+        self.data[index].update(col);
         col.update_tile_sizes(true);
 
         // Disable fullscreen if needed.
@@ -2504,6 +2541,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .flat_map(move |(col_idx, col)| {
                 col.tiles().enumerate().map(move |(tile_idx, (tile, _))| {
                     let layout = WindowLayout {
+                        column_display: Some(col.display_mode),
                         // Our indices are 1-based, consistent with the actions.
                         pos_in_scrolling_layout: Some((col_idx + 1, tile_idx + 1)),
                         ..tile.ipc_layout_template()

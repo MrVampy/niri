@@ -712,6 +712,7 @@ fn print_window(window: &Window) {
     }
 
     let WindowLayout {
+        column_display,
         pos_in_scrolling_layout,
         tile_size,
         window_size,
@@ -720,6 +721,9 @@ fn print_window(window: &Window) {
     } = window.layout;
 
     println!("  Layout:");
+    if let Some(display) = column_display {
+        println!("    Column display: {display:?}");
+    }
     println!(
         "    Tile size: {} x {}",
         fmt_rounded(tile_size.0),

@@ -410,7 +410,11 @@ pub enum Action {
         index: usize,
     },
     /// Move the focused window down in a column.
-    MoveWindowDown {},
+    MoveWindowDown {
+        /// Window to move; omit for the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
     /// Move the focused window up in a column.
     MoveWindowUp {
         /// Window to move; omit for the focused window.
@@ -457,6 +461,9 @@ pub enum Action {
     ToggleColumnTabbedDisplay {},
     /// Set the display mode of the focused column.
     SetColumnDisplay {
+        /// Window identifying the column; omit for the focused column.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
         /// Display mode to set.
         #[cfg_attr(feature = "clap", arg())]
         display: ColumnDisplay,
@@ -766,6 +773,9 @@ pub enum Action {
     },
     /// Change the width of the focused column.
     SetColumnWidth {
+        /// Window identifying the column; omit for the focused column.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
         /// How to change the width.
         #[cfg_attr(feature = "clap", arg(allow_hyphen_values = true))]
         change: SizeChange,
@@ -1406,6 +1416,8 @@ pub struct Timestamp {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WindowLayout {
+    /// Display mode of the tiled column, absent for floating windows.
+    pub column_display: Option<ColumnDisplay>,
     /// Location of a tiled window within a workspace: (column index, tile index in column).
     ///
     /// The indices are 1-based, i.e. the leftmost column is at index 1 and the topmost tile in a

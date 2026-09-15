@@ -67,3 +67,62 @@ fn targeted_join_and_row_move_leave_the_focused_window_selected() {
     assert_eq!(ids(&layout), [1, 3, 2]);
     assert_eq!(focused(&layout), 3);
 }
+
+#[test]
+fn targeted_width_display_and_downward_moves_preserve_focus_and_report_display() {
+    let mut layout = check_ops([
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+    ]);
+    let other_width = layout
+        .windows()
+        .find(|(_, window)| *window.id() == 3)
+        .unwrap()
+        .1
+        .requested_size();
+    layout.consume_or_expel_window_left(Some(&2));
+    layout.set_column_width_by_id(&2, SizeChange::SetFixed(600));
+    layout.verify_invariants();
+    assert_eq!(focused(&layout), 3);
+    for (_, window) in layout.windows() {
+        if *window.id() == 3 {
+            assert_eq!(window.requested_size(), other_width);
+        } else {
+            assert_eq!(window.requested_size().unwrap().w, 600);
+        }
+    }
+    layout.set_column_display_by_id(&2, niri_ipc::ColumnDisplay::Tabbed);
+    layout.verify_invariants();
+    let display = layout
+        .active_workspace()
+        .unwrap()
+        .tiles_with_ipc_layouts()
+        .find(|(tile, _)| *tile.window().id() == 1)
+        .unwrap()
+        .1
+        .column_display;
+    assert_eq!(display, Some(niri_ipc::ColumnDisplay::Tabbed));
+    layout.move_window_down_by_id(&1);
+    layout.verify_invariants();
+    assert_eq!(ids(&layout), [2, 1, 3]);
+    assert_eq!(focused(&layout), 3);
+    layout.set_column_display_by_id(&1, niri_ipc::ColumnDisplay::Normal);
+    let display = layout
+        .active_workspace()
+        .unwrap()
+        .tiles_with_ipc_layouts()
+        .find(|(tile, _)| *tile.window().id() == 1)
+        .unwrap()
+        .1
+        .column_display;
+    assert_eq!(display, Some(niri_ipc::ColumnDisplay::Normal));
+    assert_eq!(focused(&layout), 3);
+}

@@ -987,6 +987,14 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::MoveWindowDownById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.move_window_down_by_id(&window);
+                    self.niri.queue_redraw_all();
+                }
+            }
             Action::MoveWindowDown => {
                 if self.niri.screenshot_ui.is_open() {
                     self.niri.screenshot_ui.move_down();
@@ -1607,6 +1615,14 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::SetColumnDisplayById(id, display) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.set_column_display_by_id(&window, display);
+                    self.niri.queue_redraw_all();
+                }
+            }
             Action::SetColumnDisplay(display) => {
                 self.niri.layout.set_column_display(display);
                 self.maybe_warp_cursor_to_focus();
@@ -2003,6 +2019,14 @@ impl State {
                             self.move_cursor_to_output(&output);
                         }
                     }
+                }
+            }
+            Action::SetColumnWidthById(id, change) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.set_column_width_by_id(&window, change);
+                    self.niri.queue_redraw_all();
                 }
             }
             Action::SetColumnWidth(change) => {

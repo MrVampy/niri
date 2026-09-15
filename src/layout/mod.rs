@@ -1838,6 +1838,39 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
+    pub fn set_column_width_by_id(&mut self, window: &W::Id, change: SizeChange) {
+        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
+            if move_.tile.window().id() == window {
+                return;
+            }
+        }
+        if let Some(workspace) = self.workspaces_mut().find(|ws| ws.has_window(window)) {
+            workspace.set_column_width_by_id(window, change);
+        }
+    }
+
+    pub fn set_column_display_by_id(&mut self, window: &W::Id, display: ColumnDisplay) {
+        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
+            if move_.tile.window().id() == window {
+                return;
+            }
+        }
+        if let Some(workspace) = self.workspaces_mut().find(|ws| ws.has_window(window)) {
+            workspace.set_column_display_by_id(window, display);
+        }
+    }
+
+    pub fn move_window_down_by_id(&mut self, window: &W::Id) {
+        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
+            if move_.tile.window().id() == window {
+                return;
+            }
+        }
+        if let Some(workspace) = self.workspaces_mut().find(|ws| ws.has_window(window)) {
+            workspace.move_window_down_by_id(window);
+        }
+    }
+
     pub fn move_column_to_index_by_id(&mut self, window: &W::Id, index: usize) {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             if move_.tile.window().id() == window {

@@ -198,6 +198,8 @@ pub enum Action {
     #[knuffel(skip)]
     MoveColumnToIndexById(u64, usize),
     MoveWindowDown,
+    #[knuffel(skip)]
+    MoveWindowDownById(u64),
     MoveWindowUp,
     #[knuffel(skip)]
     MoveWindowUpById(u64),
@@ -215,6 +217,8 @@ pub enum Action {
     SwapWindowRight,
     ToggleColumnTabbedDisplay,
     SetColumnDisplay(#[knuffel(argument, str)] ColumnDisplay),
+    #[knuffel(skip)]
+    SetColumnDisplayById(u64, ColumnDisplay),
     CenterColumn,
     CenterWindow,
     #[knuffel(skip)]
@@ -329,6 +333,8 @@ pub enum Action {
     #[knuffel(skip)]
     MaximizeWindowToEdgesById(u64),
     SetColumnWidth(#[knuffel(argument, str)] SizeChange),
+    #[knuffel(skip)]
+    SetColumnWidthById(u64, SizeChange),
     ExpandColumnToAvailableWidth,
     SwitchLayout(#[knuffel(argument, str)] LayoutSwitchTarget),
     ShowHotkeyOverlay,
@@ -489,7 +495,8 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::MoveColumnRightOrToMonitorRight {} => {
                 Self::MoveColumnRightOrToMonitorRight
             }
-            niri_ipc::Action::MoveWindowDown {} => Self::MoveWindowDown,
+            niri_ipc::Action::MoveWindowDown { id: None } => Self::MoveWindowDown,
+            niri_ipc::Action::MoveWindowDown { id: Some(id) } => Self::MoveWindowDownById(id),
             niri_ipc::Action::MoveWindowUp { id: None } => Self::MoveWindowUp,
             niri_ipc::Action::MoveWindowUp { id: Some(id) } => Self::MoveWindowUpById(id),
             niri_ipc::Action::MoveWindowDownOrToWorkspaceDown {} => {
@@ -513,7 +520,13 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::SwapWindowRight {} => Self::SwapWindowRight,
             niri_ipc::Action::SwapWindowLeft {} => Self::SwapWindowLeft,
             niri_ipc::Action::ToggleColumnTabbedDisplay {} => Self::ToggleColumnTabbedDisplay,
-            niri_ipc::Action::SetColumnDisplay { display } => Self::SetColumnDisplay(display),
+            niri_ipc::Action::SetColumnDisplay { id: None, display } => {
+                Self::SetColumnDisplay(display)
+            }
+            niri_ipc::Action::SetColumnDisplay {
+                id: Some(id),
+                display,
+            } => Self::SetColumnDisplayById(id, display),
             niri_ipc::Action::CenterColumn {} => Self::CenterColumn,
             niri_ipc::Action::CenterWindow { id: None } => Self::CenterWindow,
             niri_ipc::Action::CenterWindow { id: Some(id) } => Self::CenterWindowById(id),
@@ -638,7 +651,11 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::MaximizeWindowToEdges { id: Some(id) } => {
                 Self::MaximizeWindowToEdgesById(id)
             }
-            niri_ipc::Action::SetColumnWidth { change } => Self::SetColumnWidth(change),
+            niri_ipc::Action::SetColumnWidth { id: None, change } => Self::SetColumnWidth(change),
+            niri_ipc::Action::SetColumnWidth {
+                id: Some(id),
+                change,
+            } => Self::SetColumnWidthById(id, change),
             niri_ipc::Action::ExpandColumnToAvailableWidth {} => Self::ExpandColumnToAvailableWidth,
             niri_ipc::Action::SwitchLayout { layout } => Self::SwitchLayout(layout),
             niri_ipc::Action::ShowHotkeyOverlay {} => Self::ShowHotkeyOverlay,
