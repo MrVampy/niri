@@ -1071,6 +1071,16 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.move_column_to_last();
     }
 
+    pub fn set_column_width_setting_by_id(
+        &mut self,
+        window: &W::Id,
+        width: niri_ipc::ColumnWidthSetting,
+    ) {
+        if !self.floating.has_window(window) {
+            self.scrolling.set_column_width_setting_by_id(window, width);
+        }
+    }
+
     pub fn set_column_width_by_id(&mut self, window: &W::Id, change: SizeChange) {
         if !self.floating.has_window(window) {
             self.scrolling.set_column_width_by_id(window, change);

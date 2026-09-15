@@ -476,6 +476,10 @@ fn validate_action(action: &Action) -> Result<(), String> {
         }
     }
 
+    if let Action::SetColumnWidthSetting { width, .. } = action {
+        width.validate().map_err(String::from)?;
+    }
+
     if let Action::LoadConfigFile { path: Some(path) } = action {
         let p = Path::new(path);
         if !p.is_file() {
@@ -518,7 +522,11 @@ fn make_ipc_window(
     workspace_id: Option<WorkspaceId>,
     layout: WindowLayout,
 ) -> niri_ipc::Window {
+    let mode = crate::layout::LayoutElement::sizing_mode(mapped);
     with_toplevel_role(mapped.toplevel(), |role| niri_ipc::Window {
+        is_fullscreen: mode.is_fullscreen(),
+        is_maximized: mode.is_maximized(),
+        is_windowed_fullscreen: mapped.is_windowed_fullscreen(),
         id: mapped.id().get(),
         title: role.title.clone(),
         app_id: role.app_id.clone(),
@@ -745,6 +753,10 @@ impl State {
             let mut changed =
                 ipc_win.workspace_id != workspace_id || ipc_win.is_floating != mapped.is_floating();
 
+            let mode = crate::layout::LayoutElement::sizing_mode(mapped);
+            changed |= ipc_win.is_fullscreen != mode.is_fullscreen()
+                || ipc_win.is_maximized != mode.is_maximized()
+                || ipc_win.is_windowed_fullscreen != mapped.is_windowed_fullscreen();
             changed |= with_toplevel_role(mapped.toplevel(), |role| {
                 ipc_win.title != role.title || ipc_win.app_id != role.app_id
             });

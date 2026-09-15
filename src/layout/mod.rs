@@ -1838,6 +1838,21 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
+    pub fn set_column_width_setting_by_id(
+        &mut self,
+        window: &W::Id,
+        width: niri_ipc::ColumnWidthSetting,
+    ) {
+        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
+            if move_.tile.window().id() == window {
+                return;
+            }
+        }
+        if let Some(workspace) = self.workspaces_mut().find(|ws| ws.has_window(window)) {
+            workspace.set_column_width_setting_by_id(window, width);
+        }
+    }
+
     pub fn set_column_width_by_id(&mut self, window: &W::Id, change: SizeChange) {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             if move_.tile.window().id() == window {

@@ -126,3 +126,36 @@ fn targeted_width_display_and_downward_moves_preserve_focus_and_report_display()
     assert_eq!(display, Some(niri_ipc::ColumnDisplay::Normal));
     assert_eq!(focused(&layout), 3);
 }
+
+#[test]
+fn column_width_settings_roundtrip_without_window_border_inference() {
+    let mut layout = check_ops([
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+    ]);
+    layout.consume_or_expel_window_left(Some(&2));
+    for width in [
+        niri_ipc::ColumnWidthSetting::Fixed(603.25),
+        niri_ipc::ColumnWidthSetting::Proportion(0.6),
+    ] {
+        layout.set_column_width_setting_by_id(&2, width);
+        layout.verify_invariants();
+        for (tile, geometry) in layout.active_workspace().unwrap().tiles_with_ipc_layouts() {
+            if *tile.window().id() != 3 {
+                assert_eq!(geometry.column_width, Some(width));
+            }
+        }
+        assert_eq!(focused(&layout), 3);
+    }
+    layout.set_column_width_setting_by_id(&2, niri_ipc::ColumnWidthSetting::Fixed(f64::NAN));
+    layout.verify_invariants();
+    assert_eq!(focused(&layout), 3);
+}

@@ -2261,6 +2261,32 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.set_column_display(display);
     }
 
+    pub fn set_column_width_setting_by_id(
+        &mut self,
+        window: &W::Id,
+        width: niri_ipc::ColumnWidthSetting,
+    ) {
+        if width.validate().is_err() {
+            return;
+        }
+        let Some(column) = self
+            .columns
+            .iter_mut()
+            .find(|column| column.tiles.iter().any(|tile| tile.window().id() == window))
+        else {
+            return;
+        };
+        column.width = match width {
+            niri_ipc::ColumnWidthSetting::Fixed(value) => ColumnWidth::Fixed(value),
+            niri_ipc::ColumnWidthSetting::Proportion(value) => ColumnWidth::Proportion(value),
+        };
+        column.preset_width_idx = None;
+        column.is_full_width = false;
+        column.is_pending_maximized = false;
+        column.update_tile_sizes(true);
+        cancel_resize_for_column(&mut self.interactive_resize, column);
+    }
+
     pub fn set_column_width_by_id(&mut self, window: &W::Id, change: SizeChange) {
         let Some(column) = self
             .columns
@@ -2541,6 +2567,18 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .flat_map(move |(col_idx, col)| {
                 col.tiles().enumerate().map(move |(tile_idx, (tile, _))| {
                     let layout = WindowLayout {
+                        column_width: Some(if col.is_full_width || col.is_pending_maximized {
+                            niri_ipc::ColumnWidthSetting::Proportion(1.0)
+                        } else {
+                            match col.width {
+                                ColumnWidth::Fixed(value) => {
+                                    niri_ipc::ColumnWidthSetting::Fixed(value)
+                                }
+                                ColumnWidth::Proportion(value) => {
+                                    niri_ipc::ColumnWidthSetting::Proportion(value)
+                                }
+                            }
+                        }),
                         column_display: Some(col.display_mode),
                         // Our indices are 1-based, consistent with the actions.
                         pos_in_scrolling_layout: Some((col_idx + 1, tile_idx + 1)),

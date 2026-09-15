@@ -697,6 +697,15 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(allow_hyphen_values = true))]
         change: SizeChange,
     },
+    /// Restore the column width setting without interpreting fixed widths as window widths.
+    SetColumnWidthSetting {
+        /// Window identifying the target column.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: u64,
+        /// The column's fixed logical width or working-area proportion.
+        #[cfg_attr(feature = "clap", arg())]
+        width: ColumnWidthSetting,
+    },
     /// Change the height of a window.
     #[cfg_attr(
         feature = "clap",
@@ -1012,6 +1021,48 @@ pub enum LayoutSwitchTarget {
     Prev,
     /// The specific layout by index.
     Index(u8),
+}
+
+/// The stored width policy of a tiled column.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum ColumnWidthSetting {
+    /// Fixed column width in logical pixels, including tile decorations.
+    Fixed(f64),
+    /// Fraction of the working area, with 1.0 representing full width.
+    Proportion(f64),
+}
+
+impl ColumnWidthSetting {
+    /// Validate against the layout's supported width range.
+    pub fn validate(self) -> Result<(), &'static str> {
+        match self {
+            Self::Fixed(value) if value.is_finite() && (1.0..=100000.0).contains(&value) => Ok(()),
+            Self::Proportion(value) if value.is_finite() && (0.0..=10000.0).contains(&value) => {
+                Ok(())
+            }
+            _ => Err("column width setting is outside the supported range"),
+        }
+    }
+}
+
+impl FromStr for ColumnWidthSetting {
+    type Err = &'static str;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let width = if let Some(percent) = value.strip_suffix('%') {
+            Self::Proportion(
+                percent
+                    .parse::<f64>()
+                    .map_err(|_| "invalid column proportion")?
+                    / 100.0,
+            )
+        } else {
+            Self::Fixed(value.parse().map_err(|_| "invalid column width")?)
+        };
+        width.validate()?;
+        Ok(width)
+    }
 }
 
 /// How windows display in a column.
@@ -1346,6 +1397,12 @@ pub enum MaxBpc {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Window {
+    /// Whether the committed window is fullscreen.
+    pub is_fullscreen: bool,
+    /// Whether the committed window is maximized.
+    pub is_maximized: bool,
+    /// Whether the client sees fullscreen while the compositor keeps it windowed.
+    pub is_windowed_fullscreen: bool,
     /// Unique id of this window.
     ///
     /// This id remains constant while this window is open.
@@ -1416,6 +1473,8 @@ pub struct Timestamp {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WindowLayout {
+    /// Effective column width policy, absent for floating or interactively moved windows.
+    pub column_width: Option<ColumnWidthSetting>,
     /// Display mode of the tiled column, absent for floating windows.
     pub column_display: Option<ColumnDisplay>,
     /// Location of a tiled window within a workspace: (column index, tile index in column).

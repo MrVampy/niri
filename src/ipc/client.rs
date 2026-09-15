@@ -712,6 +712,7 @@ fn print_window(window: &Window) {
     }
 
     let WindowLayout {
+        column_width,
         column_display,
         pos_in_scrolling_layout,
         tile_size,
@@ -720,7 +721,13 @@ fn print_window(window: &Window) {
         window_offset_in_tile,
     } = window.layout;
 
+    println!("  Fullscreen: {}", window.is_fullscreen);
+    println!("  Maximized: {}", window.is_maximized);
+    println!("  Windowed fullscreen: {}", window.is_windowed_fullscreen);
     println!("  Layout:");
+    if let Some(width) = column_width {
+        println!("    Column width setting: {width:?}");
+    }
     if let Some(display) = column_display {
         println!("    Column display: {display:?}");
     }

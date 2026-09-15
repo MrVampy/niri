@@ -2021,6 +2021,16 @@ impl State {
                     }
                 }
             }
+            Action::SetColumnWidthSettingById(id, width) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri
+                        .layout
+                        .set_column_width_setting_by_id(&window, width);
+                    self.niri.queue_redraw_all();
+                }
+            }
             Action::SetColumnWidthById(id, change) => {
                 let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
                 let window = window.map(|(_, m)| m.window.clone());
