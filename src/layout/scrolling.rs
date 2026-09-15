@@ -1677,6 +1677,78 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.columns[self.active_column_idx].focus_bottom()
     }
 
+    pub fn move_column_to_index_by_id(&mut self, window: &W::Id, index: usize) {
+        let Some(source) = self
+            .columns
+            .iter()
+            .position(|column| column.tiles.iter().any(|tile| tile.window().id() == window))
+        else {
+            return;
+        };
+        let target = index.saturating_sub(1).min(self.columns.len() - 1);
+        if source == target {
+            return;
+        }
+        if source == self.active_column_idx {
+            self.move_column_to(target);
+            return;
+        }
+        let focused_x = self.column_x(self.active_column_idx);
+        let old_positions: Vec<_> = (0..self.columns.len()).map(|i| self.column_x(i)).collect();
+        let mut column = self.columns.remove(source);
+        let data = self.data.remove(source);
+        cancel_resize_for_column(&mut self.interactive_resize, &mut column);
+        self.columns.insert(target, column);
+        self.data.insert(target, data);
+        if source < self.active_column_idx && self.active_column_idx <= target {
+            self.active_column_idx -= 1;
+        } else if target <= self.active_column_idx && self.active_column_idx < source {
+            self.active_column_idx += 1;
+        }
+        self.view_offset
+            .offset(focused_x - self.column_x(self.active_column_idx));
+        for current in source.min(target)..=source.max(target) {
+            let previous = if current == target {
+                source
+            } else if source < target {
+                current + 1
+            } else {
+                current - 1
+            };
+            let delta = old_positions[previous] - self.column_x(current);
+            self.columns[current].animate_move_from(delta);
+        }
+    }
+
+    pub fn move_window_up_by_id(&mut self, window: &W::Id) {
+        let Some((column, source)) = self.columns.iter_mut().find_map(|column| {
+            let source = column
+                .tiles
+                .iter()
+                .position(|tile| tile.window().id() == window)?;
+            Some((column, source))
+        }) else {
+            return;
+        };
+        if source == 0 {
+            return;
+        }
+        let target = source - 1;
+        let source_y = column.tile_offset(source).y;
+        let target_y = column.tile_offset(target).y;
+        column.tiles.swap(source, target);
+        column.data.swap(source, target);
+        if column.active_tile_idx == source {
+            column.active_tile_idx = target;
+        } else if column.active_tile_idx == target {
+            column.active_tile_idx = source;
+        }
+        let new_source_y = column.tile_offset(source).y;
+        let new_target_y = column.tile_offset(target).y;
+        column.tiles[target].animate_move_y_from(source_y - new_target_y);
+        column.tiles[source].animate_move_y_from(target_y - new_source_y);
+    }
+
     pub fn move_column_to_index(&mut self, index: usize) {
         if self.columns.is_empty() {
             return;

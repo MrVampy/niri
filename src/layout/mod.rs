@@ -1838,6 +1838,28 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
+    pub fn move_column_to_index_by_id(&mut self, window: &W::Id, index: usize) {
+        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
+            if move_.tile.window().id() == window {
+                return;
+            }
+        }
+        if let Some(workspace) = self.workspaces_mut().find(|ws| ws.has_window(window)) {
+            workspace.move_column_to_index_by_id(window, index);
+        }
+    }
+
+    pub fn move_window_up_by_id(&mut self, window: &W::Id) {
+        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
+            if move_.tile.window().id() == window {
+                return;
+            }
+        }
+        if let Some(workspace) = self.workspaces_mut().find(|ws| ws.has_window(window)) {
+            workspace.move_window_up_by_id(window);
+        }
+    }
+
     pub fn move_column_to_index(&mut self, index: usize) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;

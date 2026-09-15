@@ -1071,6 +1071,18 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.move_column_to_last();
     }
 
+    pub fn move_column_to_index_by_id(&mut self, window: &W::Id, index: usize) {
+        if !self.floating.has_window(window) {
+            self.scrolling.move_column_to_index_by_id(window, index);
+        }
+    }
+
+    pub fn move_window_up_by_id(&mut self, window: &W::Id) {
+        if !self.floating.has_window(window) {
+            self.scrolling.move_window_up_by_id(window);
+        }
+    }
+
     pub fn move_column_to_index(&mut self, index: usize) {
         if self.floating_is_active.get() {
             return;

@@ -998,6 +998,14 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::MoveWindowUpById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.move_window_up_by_id(&window);
+                    self.niri.queue_redraw_all();
+                }
+            }
             Action::MoveWindowUp => {
                 if self.niri.screenshot_ui.is_open() {
                     self.niri.screenshot_ui.move_up();
@@ -1439,6 +1447,14 @@ impl State {
                     }
 
                     // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::MoveColumnToIndexById(id, index) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.move_column_to_index_by_id(&window, index);
                     self.niri.queue_redraw_all();
                 }
             }

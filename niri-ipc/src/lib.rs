@@ -400,6 +400,9 @@ pub enum Action {
     MoveColumnRightOrToMonitorRight {},
     /// Move the focused column to a specific index on its workspace.
     MoveColumnToIndex {
+        /// Window identifying the column; omit for the focused column.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
         /// New index for the column.
         ///
         /// The index starts from 1 for the first column.
@@ -409,7 +412,11 @@ pub enum Action {
     /// Move the focused window down in a column.
     MoveWindowDown {},
     /// Move the focused window up in a column.
-    MoveWindowUp {},
+    MoveWindowUp {
+        /// Window to move; omit for the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
     /// Move the focused window down in a column or to the workspace below.
     MoveWindowDownOrToWorkspaceDown {},
     /// Move the focused window up in a column or to the workspace above.
