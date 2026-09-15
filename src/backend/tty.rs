@@ -57,7 +57,7 @@ use smithay::wayland::drm_lease::{
     DrmLease, DrmLeaseBuilder, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
 };
 use smithay::wayland::presentation::Refresh;
-use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
+use smithay_drm_extras::drm_scanner::{CrtcMapper, DrmScanEvent, DrmScanner};
 use wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
 use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 
@@ -131,11 +131,159 @@ type GbmDrmCompositor = DrmCompositor<
     DrmDeviceFd,
 >;
 
+/// A CRTC mapper that lets enabled outputs reclaim controllers reserved by disabled outputs.
+///
+/// Smithay's default mapper preserves every connector-to-CRTC mapping while a connector remains
+/// physically connected. This normally avoids unnecessary modesets, but a powered-off external
+/// monitor can temporarily disappear while a configured-off laptop panel remains connected. The
+/// panel then claims the newly free CRTC. When the external monitor comes back, no CRTC remains
+/// even though the laptop panel is still off.
+#[derive(Debug, Default)]
+struct ConfigAwareCrtcMapper {
+    crtcs: HashMap<connector::Handle, crtc::Handle>,
+    low_priority: HashSet<connector::Handle>,
+}
+
+impl ConfigAwareCrtcMapper {
+    fn set_low_priority(&mut self, connectors: HashSet<connector::Handle>) {
+        self.low_priority = connectors;
+    }
+
+    fn is_available(&self, crtc: &crtc::Handle) -> bool {
+        !self.crtcs.values().any(|mapped| mapped == crtc)
+    }
+
+    fn restored_for_connector(
+        &self,
+        drm: &impl Device,
+        connector: &connector::Info,
+    ) -> Option<crtc::Handle> {
+        let encoder = connector.current_encoder()?;
+        let encoder = drm.get_encoder(encoder).ok()?;
+        let crtc = encoder.crtc()?;
+
+        self.is_available(&crtc).then_some(crtc)
+    }
+
+    fn pick_next_available_for_connector(
+        &self,
+        drm: &impl Device,
+        connector: &connector::Info,
+    ) -> Option<crtc::Handle> {
+        let resources = drm.resource_handles().ok()?;
+
+        connector
+            .encoders()
+            .iter()
+            .flat_map(|encoder| drm.get_encoder(*encoder))
+            .find_map(|encoder| {
+                resources
+                    .filter_crtcs(encoder.possible_crtcs())
+                    .into_iter()
+                    .find(|crtc| self.is_available(crtc))
+            })
+    }
+
+    fn map_with_disabled_preemption(
+        &mut self,
+        drm: &impl Device,
+        connector: &connector::Info,
+    ) {
+        if let Some(crtc) = self.pick_next_available_for_connector(drm, connector) {
+            self.crtcs.insert(connector.handle(), crtc);
+            return;
+        }
+
+        let victims: Vec<_> = self
+            .crtcs
+            .iter()
+            .filter(|(handle, _)| self.low_priority.contains(handle))
+            .map(|(handle, crtc)| (*handle, *crtc))
+            .collect();
+
+        for (victim, old_crtc) in victims {
+            self.crtcs.remove(&victim);
+
+            if let Some(crtc) = self.pick_next_available_for_connector(drm, connector) {
+                debug!(
+                    "reassigning {crtc:?} from configured-off connector {victim:?} \
+                     to enabled connector {:?}",
+                    connector.handle()
+                );
+                self.crtcs.insert(connector.handle(), crtc);
+                return;
+            }
+
+            self.crtcs.insert(victim, old_crtc);
+        }
+    }
+}
+
+impl CrtcMapper for ConfigAwareCrtcMapper {
+    fn map<'a>(
+        &mut self,
+        drm: &impl Device,
+        connectors: impl Iterator<Item = &'a connector::Info> + Clone,
+    ) {
+        let connected: Vec<_> = connectors
+            .filter(|connector| connector.state() == connector::State::Connected)
+            .collect();
+        let connected_handles: HashSet<_> =
+            connected.iter().map(|connector| connector.handle()).collect();
+
+        self.crtcs
+            .retain(|connector, _| connected_handles.contains(connector));
+
+        let mut needs_crtc: Vec<_> = connected
+            .iter()
+            .copied()
+            .filter(|connector| !self.crtcs.contains_key(&connector.handle()))
+            .collect();
+
+        // Enabled connectors must restore their hardware mappings before configured-off ones.
+        needs_crtc.sort_by_key(|connector| self.low_priority.contains(&connector.handle()));
+        needs_crtc.retain(|connector| {
+            if let Some(crtc) = self.restored_for_connector(drm, connector) {
+                self.crtcs.insert(connector.handle(), crtc);
+                false
+            } else {
+                true
+            }
+        });
+
+        let enabled_needs: Vec<_> = needs_crtc
+            .into_iter()
+            .filter(|connector| !self.low_priority.contains(&connector.handle()))
+            .collect();
+        for connector in enabled_needs {
+            self.map_with_disabled_preemption(drm, connector);
+        }
+
+        // Keep disabled connectors discoverable whenever a controller remains free, so an output
+        // can still be turned back on later without restarting the compositor.
+        let disabled_needs: Vec<_> = connected
+            .iter()
+            .copied()
+            .filter(|connector| self.low_priority.contains(&connector.handle()))
+            .filter(|connector| !self.crtcs.contains_key(&connector.handle()))
+            .collect();
+        for connector in disabled_needs {
+            if let Some(crtc) = self.pick_next_available_for_connector(drm, connector) {
+                self.crtcs.insert(connector.handle(), crtc);
+            }
+        }
+    }
+
+    fn crtc_for_connector(&self, connector: &connector::Handle) -> Option<crtc::Handle> {
+        self.crtcs.get(connector).copied()
+    }
+}
+
 pub struct OutputDevice {
     token: RegistrationToken,
     // Can be None for display-only devices such as DisplayLink.
     render_node: Option<DrmNode>,
-    drm_scanner: DrmScanner,
+    drm_scanner: DrmScanner<ConfigAwareCrtcMapper>,
     surfaces: HashMap<crtc::Handle, Surface>,
     known_crtcs: HashMap<crtc::Handle, CrtcInfo>,
     // SAFETY: drop after all the objects used with them are dropped.
@@ -925,7 +1073,7 @@ impl Tty {
             drm,
             gbm,
             allocator,
-            drm_scanner: DrmScanner::new(),
+            drm_scanner: DrmScanner::new_with_mapper(ConfigAwareCrtcMapper::default()),
             surfaces: HashMap::new(),
             known_crtcs: HashMap::new(),
             drm_lease_state,
@@ -957,6 +1105,7 @@ impl Tty {
             return;
         }
 
+        let disable_laptop_panels = self.should_disable_laptop_panels(niri.is_lid_closed);
         let Some(device) = self.devices.get_mut(&node) else {
             if let Some(path) = node.dev_path() {
                 warn!("unknown device; trying to add");
@@ -970,6 +1119,50 @@ impl Tty {
 
             return;
         };
+
+        // The DRM connector state does not distinguish an output that is physically connected but
+        // configured off. Tell the mapper which connectors may yield their reserved CRTC if an
+        // enabled connector cannot otherwise be mapped.
+        let low_priority = {
+            let config = self.config.borrow();
+            let disable_monitor_names = config.debug.disable_monitor_names;
+            let handles = device
+                .drm
+                .resource_handles()
+                .map(|resources| resources.connectors().to_vec())
+                .unwrap_or_default();
+
+            handles
+                .into_iter()
+                .filter_map(|handle| device.drm.get_connector(handle, true).ok())
+                .filter_map(|connector| {
+                    let connector_name = format_connector_name(&connector);
+                    let output_name = if disable_monitor_names {
+                        OutputName {
+                            connector: connector_name,
+                            make: None,
+                            model: None,
+                            serial: None,
+                        }
+                    } else {
+                        make_output_name(&device.drm, connector.handle(), connector_name)
+                    };
+                    let output_config = config
+                        .outputs
+                        .find(&output_name)
+                        .cloned()
+                        .unwrap_or_default();
+                    let disabled_for_lid =
+                        disable_laptop_panels && is_laptop_panel(&output_name.connector);
+
+                    (output_config.off || disabled_for_lid).then_some(connector.handle())
+                })
+                .collect()
+        };
+        device
+            .drm_scanner
+            .crtc_mapper_mut()
+            .set_low_priority(low_priority);
 
         // DrmScanner will preserve any existing connector-CRTC mapping.
         let scan_result = match device.drm_scanner.scan_connectors(&device.drm) {
@@ -1079,6 +1272,50 @@ impl Tty {
             // Insert it right away so next added connector will check against this one too.
             let device = self.devices.get_mut(&node).unwrap();
             device.known_crtcs.insert(crtc, info);
+        }
+
+        // A connector can remain physically connected while the mapper moves its CRTC to or from
+        // another connector. DrmScanEvent only reports connector-state and mode-list changes, so
+        // reconcile Niri's CRTC metadata with the mapper explicitly.
+        let remapped: Vec<_> = {
+            let device = self.devices.get(&node).unwrap();
+            device
+                .drm_scanner
+                .crtcs()
+                .filter(|(connector, crtc)| {
+                    let connector_name = format_connector_name(connector);
+                    device
+                        .known_crtcs
+                        .get(crtc)
+                        .is_none_or(|info| info.name.connector != connector_name)
+                })
+                .map(|(connector, crtc)| (connector.clone(), crtc))
+                .collect()
+        };
+
+        for (connector, crtc) in remapped {
+            let device = self.devices.get_mut(&node).unwrap();
+            if let Some(surface) = device.surfaces.get(&crtc) {
+                if surface.connector != connector.handle() {
+                    warn!(
+                        "refusing to replace active CRTC metadata for connector {}",
+                        surface.name.connector
+                    );
+                    continue;
+                }
+            }
+
+            let connector_name = format_connector_name(&connector);
+            let name =
+                make_output_name(&device.drm, connector.handle(), connector_name.clone());
+            debug!("CRTC mapping changed for connector {connector_name}: {crtc:?}");
+            device.known_crtcs.insert(
+                crtc,
+                CrtcInfo {
+                    id: OutputId::next(),
+                    name,
+                },
+            );
         }
 
         // If the device was just added or resumed, we need to cleanup any disconnected connectors
