@@ -155,6 +155,28 @@ fn column_width_settings_roundtrip_without_window_border_inference() {
         }
         assert_eq!(focused(&layout), 3);
     }
+    layout.set_column_width_setting_by_id(&2, niri_ipc::ColumnWidthSetting::Proportion(0.6), true);
+    let geometry = layout
+        .active_workspace()
+        .unwrap()
+        .tiles_with_ipc_layouts()
+        .find(|(tile, _)| *tile.window().id() == 2)
+        .unwrap()
+        .1;
+    assert_eq!(
+        geometry.column_width,
+        Some(niri_ipc::ColumnWidthSetting::Proportion(0.6))
+    );
+    assert_eq!(geometry.column_full_width, Some(true));
+    layout.set_maximized(&2, true);
+    layout.set_column_width_setting_by_id(&2, niri_ipc::ColumnWidthSetting::Proportion(0.6), false);
+    assert!(layout
+        .windows()
+        .find(|(_, window)| *window.id() == 2)
+        .unwrap()
+        .1
+        .pending_sizing_mode()
+        .is_maximized());
     layout.set_column_width_setting_by_id(&2, niri_ipc::ColumnWidthSetting::Fixed(f64::NAN), false);
     layout.verify_invariants();
     assert_eq!(focused(&layout), 3);
