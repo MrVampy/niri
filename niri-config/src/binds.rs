@@ -336,7 +336,7 @@ pub enum Action {
     #[knuffel(skip)]
     SetColumnWidthById(u64, SizeChange),
     #[knuffel(skip)]
-    SetColumnWidthSettingById(u64, niri_ipc::ColumnWidthSetting),
+    SetColumnWidthSettingById(u64, niri_ipc::ColumnWidthSetting, bool),
     ExpandColumnToAvailableWidth,
     SwitchLayout(#[knuffel(argument, str)] LayoutSwitchTarget),
     ShowHotkeyOverlay,
@@ -612,9 +612,11 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::MoveColumnToMonitorPrevious {} => Self::MoveColumnToMonitorPrevious,
             niri_ipc::Action::MoveColumnToMonitorNext {} => Self::MoveColumnToMonitorNext,
             niri_ipc::Action::MoveColumnToMonitor { output } => Self::MoveColumnToMonitor(output),
-            niri_ipc::Action::SetColumnWidthSetting { id, width } => {
-                Self::SetColumnWidthSettingById(id, width)
-            }
+            niri_ipc::Action::SetColumnWidthSetting {
+                id,
+                width,
+                full_width,
+            } => Self::SetColumnWidthSettingById(id, width, full_width),
             niri_ipc::Action::SetWindowWidth { id: None, change } => Self::SetWindowWidth(change),
             niri_ipc::Action::SetWindowWidth {
                 id: Some(id),

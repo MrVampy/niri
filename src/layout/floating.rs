@@ -333,6 +333,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
             let pos = pos.to_physical_precise_round(scale).to_logical(scale);
 
             let layout = WindowLayout {
+                pos_in_working_area: Some((pos - self.working_area.loc).into()),
                 tile_pos_in_workspace_view: Some(pos.into()),
                 ..tile.ipc_layout_template()
             };

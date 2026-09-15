@@ -1842,6 +1842,7 @@ impl<W: LayoutElement> Layout<W> {
         &mut self,
         window: &W::Id,
         width: niri_ipc::ColumnWidthSetting,
+        full_width: bool,
     ) {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             if move_.tile.window().id() == window {
@@ -1849,7 +1850,7 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
         if let Some(workspace) = self.workspaces_mut().find(|ws| ws.has_window(window)) {
-            workspace.set_column_width_setting_by_id(window, width);
+            workspace.set_column_width_setting_by_id(window, width, full_width);
         }
     }
 

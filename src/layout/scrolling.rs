@@ -2265,6 +2265,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         &mut self,
         window: &W::Id,
         width: niri_ipc::ColumnWidthSetting,
+        full_width: bool,
     ) {
         if width.validate().is_err() {
             return;
@@ -2281,8 +2282,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             niri_ipc::ColumnWidthSetting::Proportion(value) => ColumnWidth::Proportion(value),
         };
         column.preset_width_idx = None;
-        column.is_full_width = false;
-        column.is_pending_maximized = false;
+        column.is_full_width = full_width;
         column.update_tile_sizes(true);
         cancel_resize_for_column(&mut self.interactive_resize, column);
     }
@@ -2567,16 +2567,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .flat_map(move |(col_idx, col)| {
                 col.tiles().enumerate().map(move |(tile_idx, (tile, _))| {
                     let layout = WindowLayout {
-                        column_width: Some(if col.is_full_width || col.is_pending_maximized {
-                            niri_ipc::ColumnWidthSetting::Proportion(1.0)
-                        } else {
-                            match col.width {
-                                ColumnWidth::Fixed(value) => {
-                                    niri_ipc::ColumnWidthSetting::Fixed(value)
-                                }
-                                ColumnWidth::Proportion(value) => {
-                                    niri_ipc::ColumnWidthSetting::Proportion(value)
-                                }
+                        column_full_width: Some(col.is_full_width),
+                        column_width: Some(match col.width {
+                            ColumnWidth::Fixed(value) => niri_ipc::ColumnWidthSetting::Fixed(value),
+                            ColumnWidth::Proportion(value) => {
+                                niri_ipc::ColumnWidthSetting::Proportion(value)
                             }
                         }),
                         column_display: Some(col.display_mode),

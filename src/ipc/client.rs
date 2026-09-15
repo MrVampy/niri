@@ -712,6 +712,8 @@ fn print_window(window: &Window) {
     }
 
     let WindowLayout {
+        column_full_width,
+        pos_in_working_area,
         column_width,
         column_display,
         pos_in_scrolling_layout,
@@ -725,6 +727,12 @@ fn print_window(window: &Window) {
     println!("  Maximized: {}", window.is_maximized);
     println!("  Windowed fullscreen: {}", window.is_windowed_fullscreen);
     println!("  Layout:");
+    if let Some(full_width) = column_full_width {
+        println!("    Column full width: {full_width}");
+    }
+    if let Some(position) = pos_in_working_area {
+        println!("    Working-area position: {}, {}", position.0, position.1);
+    }
     if let Some(width) = column_width {
         println!("    Column width setting: {width:?}");
     }

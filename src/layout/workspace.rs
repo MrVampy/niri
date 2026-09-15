@@ -1075,9 +1075,11 @@ impl<W: LayoutElement> Workspace<W> {
         &mut self,
         window: &W::Id,
         width: niri_ipc::ColumnWidthSetting,
+        full_width: bool,
     ) {
         if !self.floating.has_window(window) {
-            self.scrolling.set_column_width_setting_by_id(window, width);
+            self.scrolling
+                .set_column_width_setting_by_id(window, width, full_width);
         }
     }
 

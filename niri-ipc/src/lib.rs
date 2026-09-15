@@ -705,6 +705,9 @@ pub enum Action {
         /// The column's fixed logical width or working-area proportion.
         #[cfg_attr(feature = "clap", arg())]
         width: ColumnWidthSetting,
+        /// Whether the column uses the full-width override.
+        #[cfg_attr(feature = "clap", arg(long))]
+        full_width: bool,
     },
     /// Change the height of a window.
     #[cfg_attr(
@@ -1473,7 +1476,11 @@ pub struct Timestamp {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WindowLayout {
-    /// Effective column width policy, absent for floating or interactively moved windows.
+    /// Full-width override of a tiled column, absent outside the scrolling layout.
+    pub column_full_width: Option<bool>,
+    /// Floating tile position relative to its working area, matching MoveFloatingWindow.
+    pub pos_in_working_area: Option<(f64, f64)>,
+    /// Configured column width policy, absent for floating or interactively moved windows.
     pub column_width: Option<ColumnWidthSetting>,
     /// Display mode of the tiled column, absent for floating windows.
     pub column_display: Option<ColumnDisplay>,

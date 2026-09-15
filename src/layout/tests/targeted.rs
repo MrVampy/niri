@@ -146,7 +146,7 @@ fn column_width_settings_roundtrip_without_window_border_inference() {
         niri_ipc::ColumnWidthSetting::Fixed(603.25),
         niri_ipc::ColumnWidthSetting::Proportion(0.6),
     ] {
-        layout.set_column_width_setting_by_id(&2, width);
+        layout.set_column_width_setting_by_id(&2, width, false);
         layout.verify_invariants();
         for (tile, geometry) in layout.active_workspace().unwrap().tiles_with_ipc_layouts() {
             if *tile.window().id() != 3 {
@@ -155,7 +155,44 @@ fn column_width_settings_roundtrip_without_window_border_inference() {
         }
         assert_eq!(focused(&layout), 3);
     }
-    layout.set_column_width_setting_by_id(&2, niri_ipc::ColumnWidthSetting::Fixed(f64::NAN));
+    layout.set_column_width_setting_by_id(&2, niri_ipc::ColumnWidthSetting::Fixed(f64::NAN), false);
     layout.verify_invariants();
     assert_eq!(focused(&layout), 3);
+}
+
+#[test]
+fn floating_positions_use_the_same_origin_as_the_position_action() {
+    let mut params = TestWindowParams::new(1);
+    params.is_floating = true;
+    let options = Options {
+        layout: niri_config::Layout {
+            struts: Struts {
+                left: FloatOrInt(20.0),
+                top: FloatOrInt(30.0),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut layout = check_ops_with_options(options, [Op::AddOutput(1), Op::AddWindow { params }]);
+    layout.move_floating_window(
+        Some(&1),
+        niri_ipc::PositionChange::SetFixed(40.0),
+        niri_ipc::PositionChange::SetFixed(70.0),
+        false,
+    );
+    layout.verify_invariants();
+    let geometry = layout
+        .active_workspace()
+        .unwrap()
+        .tiles_with_ipc_layouts()
+        .next()
+        .unwrap()
+        .1;
+    assert_eq!(geometry.pos_in_working_area, Some((40.0, 70.0)));
+    assert_ne!(
+        geometry.pos_in_working_area,
+        geometry.tile_pos_in_workspace_view
+    );
 }
