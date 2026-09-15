@@ -428,6 +428,9 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                 }
 
                 match event {
+                    Event::OutputsChanged { outputs } => {
+                        println!("Outputs changed: {outputs:?}");
+                    }
                     Event::WorkspacesChanged { workspaces } => {
                         println!("Workspaces changed: {workspaces:?}");
                     }
