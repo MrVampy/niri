@@ -158,8 +158,11 @@ pub enum Response {
     FocusedOutput(Option<Output>),
     /// Information about the focused window.
     FocusedWindow(Option<Window>),
+    /// The marker is queued before this reply; wait for it on the separate event connection.
     EventStreamBarrier {
+        /// Correlation from the request.
         id: String,
+        /// Focus from the reduced state associated with the marker.
         focused_window: Option<Window>,
     },
     /// Information about the picked window.
@@ -1695,7 +1698,9 @@ pub enum CastTarget {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum Event {
+    /// All preceding published observations are queued before this marker on this connection.
     Barrier {
+        /// Correlation from the requesting command connection.
         id: String,
     },
     /// The complete connected-output configuration, including disabled outputs.
