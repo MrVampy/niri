@@ -81,7 +81,9 @@ pub enum Request {
     FocusedOutput,
     /// Request information about the focused window.
     FocusedWindow,
+    /// Queue a marker after refreshing layout observations and return the same state's focus.
     EventStreamBarrier {
+        /// Caller correlation, limited to 128 ASCII letters, digits, hyphens or underscores.
         id: String,
     },
     /// Request picking a window and get its information.
