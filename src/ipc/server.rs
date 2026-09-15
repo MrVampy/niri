@@ -164,6 +164,7 @@ fn on_new_ipc_client(state: &mut State, stream: UnixStream) {
         }
     };
 
+    state.ipc_refresh_outputs();
     let ipc_server = state.niri.ipc_server.as_ref().unwrap();
 
     let ctx = ClientCtx {
@@ -532,6 +533,29 @@ fn make_ipc_window(
 }
 
 impl State {
+    pub fn ipc_refresh_outputs(&mut self) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+        let outputs = self
+            .backend
+            .ipc_outputs()
+            .lock()
+            .unwrap()
+            .values()
+            .cloned()
+            .map(|o| (o.name.clone(), o))
+            .collect();
+        let mut state = server.event_stream_state.borrow_mut();
+        if state.outputs.outputs == outputs {
+            return;
+        }
+        state.outputs.outputs = outputs;
+        for event in state.outputs.replicate() {
+            server.send_event(event);
+        }
+    }
+
     pub fn ipc_keyboard_layouts_changed(&mut self) {
         let keyboard = self.niri.seat.get_keyboard().unwrap();
         let keyboard_layouts = keyboard.with_xkb_state(self, |context| {
@@ -943,3 +967,6 @@ impl State {
         server.send_event(event);
     }
 }
+
+#[cfg(test)]
+mod outputs_tests;

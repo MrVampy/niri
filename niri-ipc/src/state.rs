@@ -9,7 +9,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
-use crate::{Cast, Event, KeyboardLayouts, Window, Workspace};
+use crate::{Cast, Event, KeyboardLayouts, Output, Window, Workspace};
 
 /// Part of the state communicated via the event stream.
 pub trait EventStreamStatePart {
@@ -32,6 +32,8 @@ pub trait EventStreamStatePart {
 /// the windows state part.
 #[derive(Debug, Default)]
 pub struct EventStreamState {
+    /// Connected outputs.
+    pub outputs: OutputsState,
     /// State of workspaces.
     pub workspaces: WorkspacesState,
 
@@ -93,6 +95,31 @@ pub struct CastsState {
     pub casts: HashMap<u64, Cast>,
 }
 
+/// Output configuration communicated over the event stream.
+#[derive(Debug, Default)]
+pub struct OutputsState {
+    /// Outputs indexed by connector name.
+    pub outputs: HashMap<String, Output>,
+}
+
+impl EventStreamStatePart for OutputsState {
+    fn replicate(&self) -> Vec<Event> {
+        let mut outputs: Vec<_> = self.outputs.values().cloned().collect();
+        outputs.sort_by(|a, b| a.name.cmp(&b.name));
+        vec![Event::OutputsChanged { outputs }]
+    }
+
+    fn apply(&mut self, event: Event) -> Option<Event> {
+        match event {
+            Event::OutputsChanged { outputs } => {
+                self.outputs = outputs.into_iter().map(|o| (o.name.clone(), o)).collect();
+                None
+            }
+            event => Some(event),
+        }
+    }
+}
+
 impl EventStreamStatePart for EventStreamState {
     fn replicate(&self) -> Vec<Event> {
         let mut events = Vec::new();
@@ -101,6 +128,7 @@ impl EventStreamStatePart for EventStreamState {
         events.extend(self.keyboard_layouts.replicate());
         events.extend(self.overview.replicate());
         events.extend(self.config.replicate());
+        events.extend(self.outputs.replicate());
         events.extend(self.casts.replicate());
         events
     }
@@ -111,6 +139,7 @@ impl EventStreamStatePart for EventStreamState {
         let event = self.keyboard_layouts.apply(event)?;
         let event = self.overview.apply(event)?;
         let event = self.config.apply(event)?;
+        let event = self.outputs.apply(event)?;
         let event = self.casts.apply(event)?;
         Some(event)
     }

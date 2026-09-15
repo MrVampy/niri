@@ -1964,6 +1964,7 @@ impl State {
 
         let new_config = self.backend.ipc_outputs().lock().unwrap().clone();
         self.niri.output_management_state.notify_changes(new_config);
+        self.ipc_refresh_outputs();
     }
 
     pub fn open_screenshot_ui(&mut self, show_pointer: bool, path: Option<String>) {

@@ -1205,7 +1205,7 @@ pub struct VrrToSet {
 }
 
 /// Connected output.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Output {
     /// Name of the output.
@@ -1603,6 +1603,11 @@ pub enum CastTarget {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum Event {
+    /// The complete connected-output configuration, including disabled outputs.
+    OutputsChanged {
+        /// Replaces the previous output configuration.
+        outputs: Vec<Output>,
+    },
     /// The workspace configuration has changed.
     WorkspacesChanged {
         /// The new workspace configuration.
