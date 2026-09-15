@@ -969,4 +969,5 @@ impl State {
 }
 
 #[cfg(test)]
-mod outputs_tests;
+#[path = "server/outputs_tests.rs"]
+mod namespace_ipc_outputs;

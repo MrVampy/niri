@@ -15,7 +15,8 @@ use super::*;
 
 mod animations;
 mod fullscreen;
-mod targeted;
+#[path = "tests/targeted.rs"]
+mod namespace_ipc_targeted;
 
 impl<W: LayoutElement> Default for Layout<W> {
     fn default() -> Self {
