@@ -1,5 +1,5 @@
 use super::*;
-use crate::tests::fixture::Fixture;
+use crate::tests::Fixture;
 
 #[test]
 fn output_changes_replicate_before_the_snapshot_boundary_without_duplicates() {
