@@ -186,35 +186,26 @@ fn column_width_settings_roundtrip_without_window_border_inference() {
 fn floating_positions_use_the_same_origin_as_the_position_action() {
     let mut params = TestWindowParams::new(1);
     params.is_floating = true;
-    let options = Options {
-        layout: niri_config::Layout {
-            struts: Struts {
-                left: FloatOrInt(20.0),
-                top: FloatOrInt(30.0),
-                ..Default::default()
-            },
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    let mut layout = check_ops_with_options(options, [Op::AddOutput(1), Op::AddWindow { params }]);
-    layout.move_floating_window(
+    let options = Rc::new(Options::default());
+    let size = Size::from((1920.0, 1080.0));
+    let area = Rectangle::new((20.0, 30.0).into(), (1900.0, 1050.0).into());
+    let clock = Clock::with_time(Duration::ZERO);
+    let tile = super::super::tile::Tile::new(
+        TestWindow::new(params),
+        size,
+        1.0,
+        clock.clone(),
+        options.clone(),
+    );
+    let mut floating = super::super::floating::FloatingSpace::new(size, area, 1.0, clock, options);
+    floating.add_tile(tile, true);
+    floating.move_window(
         Some(&1),
         niri_ipc::PositionChange::SetFixed(40.0),
         niri_ipc::PositionChange::SetFixed(70.0),
         false,
     );
-    layout.verify_invariants();
-    let geometry = layout
-        .active_workspace()
-        .unwrap()
-        .tiles_with_ipc_layouts()
-        .next()
-        .unwrap()
-        .1;
+    let geometry = floating.tiles_with_ipc_layouts().next().unwrap().1;
     assert_eq!(geometry.pos_in_working_area, Some((40.0, 70.0)));
-    assert_ne!(
-        geometry.pos_in_working_area,
-        geometry.tile_pos_in_workspace_view
-    );
+    assert_eq!(geometry.tile_pos_in_workspace_view, Some((60.0, 100.0)));
 }
