@@ -318,6 +318,15 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: Option<u64>,
     },
+    /// Set a window's desired mode without toggling an uncertain pending transition.
+    SetWindowMode {
+        /// Explicit window identity.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: u64,
+        /// Desired committed mode; repeated requests are idempotent.
+        #[cfg_attr(feature = "clap", arg(value_enum))]
+        mode: WindowMode,
+    },
     /// Toggle windowed (fake) fullscreen on a window.
     #[cfg_attr(
         feature = "clap",
@@ -1457,6 +1466,42 @@ pub struct Window {
     ///
     /// The timestamp comes from the monotonic clock.
     pub focus_timestamp: Option<Timestamp>,
+}
+
+/// The observable fullscreen and maximization state of a window.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum WindowMode {
+    /// Neither maximized nor fullscreen.
+    #[default]
+    Normal,
+    /// Real fullscreen in the compositor layout.
+    Fullscreen,
+    /// Maximized to the working-area edges.
+    Maximized,
+    /// Fullscreen state exposed to the client without real layout fullscreen.
+    WindowedFullscreen,
+    /// Maximized layout with windowed fullscreen exposed to the client.
+    MaximizedWindowedFullscreen,
+}
+
+impl WindowMode {
+    /// Derive the mode from committed IPC window observations.
+    pub fn of(window: &Window) -> Self {
+        if window.is_fullscreen {
+            Self::Fullscreen
+        } else if window.is_maximized && window.is_windowed_fullscreen {
+            Self::MaximizedWindowedFullscreen
+        } else if window.is_maximized {
+            Self::Maximized
+        } else if window.is_windowed_fullscreen {
+            Self::WindowedFullscreen
+        } else {
+            Self::Normal
+        }
+    }
 }
 
 /// A moment in time.

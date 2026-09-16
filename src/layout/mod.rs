@@ -3564,6 +3564,56 @@ impl<W: LayoutElement> Layout<W> {
         activate
     }
 
+    pub fn set_window_mode(&mut self, id: &W::Id, mode: niri_ipc::WindowMode) {
+        use niri_ipc::WindowMode;
+        if self.interactive_move.as_ref().is_some_and(|state| matches!(state, InteractiveMoveState::Moving(move_) if move_.tile.window().id() == id)) { return; }
+        let Some((_, window)) = self.windows().find(|(_, window)| window.id() == id) else {
+            return;
+        };
+        let sizing = window.pending_sizing_mode();
+        let windowed = window.is_pending_windowed_fullscreen();
+        let current = if sizing.is_fullscreen() {
+            WindowMode::Fullscreen
+        } else if sizing.is_maximized() && windowed {
+            WindowMode::MaximizedWindowedFullscreen
+        } else if sizing.is_maximized() {
+            WindowMode::Maximized
+        } else if windowed {
+            WindowMode::WindowedFullscreen
+        } else {
+            WindowMode::Normal
+        };
+        if current == mode {
+            return;
+        }
+        self.with_windows_mut(|window, _| {
+            if window.id() == id {
+                window.request_windowed_fullscreen(false);
+            }
+        });
+        self.set_fullscreen(id, false);
+        self.set_maximized(
+            id,
+            matches!(
+                mode,
+                WindowMode::Maximized | WindowMode::MaximizedWindowedFullscreen
+            ),
+        );
+        if mode == WindowMode::Fullscreen {
+            self.set_fullscreen(id, true);
+        }
+        if matches!(
+            mode,
+            WindowMode::WindowedFullscreen | WindowMode::MaximizedWindowedFullscreen
+        ) {
+            self.with_windows_mut(|window, _| {
+                if window.id() == id {
+                    window.request_windowed_fullscreen(true);
+                }
+            });
+        }
+    }
+
     pub fn set_fullscreen(&mut self, id: &W::Id, is_fullscreen: bool) {
         // Check if this is a request to unset the windowed fullscreen state.
         if !is_fullscreen {

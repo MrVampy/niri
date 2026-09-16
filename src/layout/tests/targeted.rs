@@ -209,3 +209,57 @@ fn floating_positions_use_the_same_origin_as_the_position_action() {
     assert_eq!(geometry.pos_in_working_area, Some((40.0, 70.0)));
     assert_eq!(geometry.tile_pos_in_workspace_view, Some((60.0, 100.0)));
 }
+
+#[test]
+fn absolute_window_modes_do_not_toggle_pending_transitions_on_retry() {
+    use niri_ipc::WindowMode;
+    let mut layout = check_ops([
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+    ]);
+    for mode in [
+        WindowMode::Fullscreen,
+        WindowMode::Maximized,
+        WindowMode::WindowedFullscreen,
+        WindowMode::MaximizedWindowedFullscreen,
+        WindowMode::Normal,
+    ] {
+        for _ in 0..2 {
+            layout.set_window_mode(&2, mode);
+            layout.verify_invariants();
+            let (_, window) = layout
+                .windows()
+                .find(|(_, window)| *window.id() == 2)
+                .unwrap();
+            assert_eq!(
+                window.pending_sizing_mode().is_fullscreen(),
+                mode == WindowMode::Fullscreen
+            );
+            assert_eq!(
+                window.pending_sizing_mode().is_maximized(),
+                matches!(
+                    mode,
+                    WindowMode::Maximized | WindowMode::MaximizedWindowedFullscreen
+                )
+            );
+            assert_eq!(
+                window.is_pending_windowed_fullscreen(),
+                matches!(
+                    mode,
+                    WindowMode::WindowedFullscreen | WindowMode::MaximizedWindowedFullscreen
+                )
+            );
+            assert_eq!(focused(&layout), 3);
+        }
+    }
+    layout.set_window_mode(&999, WindowMode::Fullscreen);
+    assert_eq!(focused(&layout), 3);
+}

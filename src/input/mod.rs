@@ -835,6 +835,18 @@ impl State {
                     mapped.toplevel().send_close();
                 }
             }
+            Action::SetWindowModeById(id, mode) => {
+                let window = self
+                    .niri
+                    .layout
+                    .windows()
+                    .find(|(_, window)| window.id().get() == id);
+                let window = window.map(|(_, window)| window.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.set_window_mode(&window, mode);
+                    self.niri.queue_redraw_all();
+                }
+            }
             Action::FullscreenWindow => {
                 let focus = self.niri.layout.focus().map(|m| m.window.clone());
                 if let Some(window) = focus {
