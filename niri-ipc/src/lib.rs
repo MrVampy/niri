@@ -150,7 +150,10 @@ pub enum Response {
     /// A request that does not need a response was handled successfully.
     Handled,
     /// Whether a guarded action was accepted; this is not proof of its postcondition.
-    GuardedAction { accepted: bool },
+    GuardedAction {
+        /// False proves that the requested action was not dispatched.
+        accepted: bool,
+    },
     /// The version string for the running niri instance.
     Version(String),
     /// Information about connected outputs.
