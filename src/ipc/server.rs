@@ -413,6 +413,30 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let color = result.map_err(|_| String::from("error getting picked color"))?;
             Response::PickedColor(color)
         }
+        Request::GuardedAction { action, guard } => {
+            validate_action(&action)?;
+            let (tx, rx) = async_channel::bounded(1);
+            let action = niri_config::Action::from(action);
+            ctx.event_loop.insert_idle(move |state| {
+                state.niri.advance_animations();
+                state.ipc_refresh_outputs();
+                state.ipc_refresh_layout();
+                let accepted = state
+                    .niri
+                    .ipc_server
+                    .as_ref()
+                    .is_some_and(|server| guard.matches(&server.event_stream_state.borrow()));
+                if accepted {
+                    state.do_action(action, false);
+                }
+                let _ = tx.send_blocking(accepted);
+            });
+            let accepted = rx
+                .recv()
+                .await
+                .map_err(|_| String::from("guarded action was interrupted"))?;
+            Response::GuardedAction { accepted }
+        }
         Request::Action(action) => {
             validate_action(&action)?;
 
@@ -1056,5 +1080,34 @@ mod namespace_ipc_barrier {
             );
             assert!(events.try_recv().is_err());
         }
+    }
+}
+
+#[cfg(test)]
+mod namespace_ipc_guard {
+    use super::*;
+
+    #[test]
+    fn a_guard_rejects_workspace_changes_after_admission() {
+        let mut state = EventStreamState::default();
+        let guard = niri_ipc::LayoutGuard::from_state(&state);
+        assert!(guard.matches(&state));
+        state.workspaces.workspaces.insert(
+            7,
+            niri_ipc::Workspace {
+                id: 7,
+                idx: 1,
+                name: Some("changed".into()),
+                output: None,
+                is_active: false,
+                is_focused: false,
+                is_urgent: false,
+                active_window_id: None,
+            },
+        );
+        assert!(!guard.matches(&state));
+        let guard = niri_ipc::LayoutGuard::from_state(&state);
+        state.workspaces.workspaces.get_mut(&7).unwrap().name = Some("changed-again".into());
+        assert!(!guard.matches(&state));
     }
 }

@@ -92,6 +92,13 @@ pub enum Request {
     PickColor,
     /// Perform an action.
     Action(Action),
+    /// Perform an action only if the refreshed layout still matches the observed guard.
+    GuardedAction {
+        /// Explicit action to process after the guard matches.
+        action: Action,
+        /// Coherent layout observed by the caller.
+        guard: Box<LayoutGuard>,
+    },
     /// Change output configuration temporarily.
     ///
     /// The configuration is changed temporarily and not saved into the config file. If the output
@@ -142,6 +149,8 @@ pub type Reply = Result<Response, String>;
 pub enum Response {
     /// A request that does not need a response was handled successfully.
     Handled,
+    /// Whether a guarded action was accepted; this is not proof of its postcondition.
+    GuardedAction { accepted: bool },
     /// The version string for the running niri instance.
     Version(String),
     /// Information about connected outputs.
@@ -1466,6 +1475,42 @@ pub struct Window {
     ///
     /// The timestamp comes from the monotonic clock.
     pub focus_timestamp: Option<Timestamp>,
+}
+
+/// A complete reduced layout used to reject stale actions at the compositor boundary.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct LayoutGuard {
+    /// Windows sorted by compositor identity.
+    pub windows: Vec<Window>,
+    /// Workspaces sorted by compositor identity.
+    pub workspaces: Vec<Workspace>,
+    /// Outputs sorted by connector name.
+    pub outputs: Vec<Output>,
+}
+
+impl LayoutGuard {
+    /// Capture deterministic ordering without relying on hash-map iteration order.
+    pub fn from_state(state: &state::EventStreamState) -> Self {
+        let mut windows: Vec<_> = state.windows.windows.values().cloned().collect();
+        windows.sort_by_key(|window| window.id);
+        let mut workspaces: Vec<_> = state.workspaces.workspaces.values().cloned().collect();
+        workspaces.sort_by_key(|workspace| workspace.id);
+        let mut outputs: Vec<_> = state.outputs.outputs.values().cloned().collect();
+        outputs.sort_by(|left, right| left.name.cmp(&right.name));
+        Self {
+            windows,
+            workspaces,
+            outputs,
+        }
+    }
+
+    /// Compare the complete typed observation, failing closed on encoding errors.
+    pub fn matches(&self, state: &state::EventStreamState) -> bool {
+        let current = Self::from_state(state);
+        matches!((serde_json::to_value(self), serde_json::to_value(current)), (Ok(expected), Ok(current)) if expected == current)
+    }
 }
 
 /// The observable fullscreen and maximization state of a window.
