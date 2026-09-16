@@ -1490,14 +1490,16 @@ pub enum WindowMode {
 impl WindowMode {
     /// Derive the mode from committed IPC window observations.
     pub fn of(window: &Window) -> Self {
-        if window.is_fullscreen {
+        if window.is_windowed_fullscreen {
+            if window.is_maximized {
+                Self::MaximizedWindowedFullscreen
+            } else {
+                Self::WindowedFullscreen
+            }
+        } else if window.is_fullscreen {
             Self::Fullscreen
-        } else if window.is_maximized && window.is_windowed_fullscreen {
-            Self::MaximizedWindowedFullscreen
         } else if window.is_maximized {
             Self::Maximized
-        } else if window.is_windowed_fullscreen {
-            Self::WindowedFullscreen
         } else {
             Self::Normal
         }
