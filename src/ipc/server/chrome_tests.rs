@@ -1,6 +1,5 @@
 use std::fs;
-use std::os::fd::AsRawFd;
-use std::os::unix::net::UnixStream;
+use std::os::unix::net::UnixListener;
 use std::os::unix::process::CommandExt;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -35,13 +34,29 @@ fn a_fresh_chrome_profile_honors_its_wayland_class() {
     fs::create_dir(&root).unwrap();
     let mut fixture = Fixture::new();
     fixture.add_output(1, (1280, 720));
-    let (server, client) = UnixStream::pair().unwrap();
-    fixture.niri().insert_client(NewClient {
-        client: server,
-        restricted: false,
-        credentials_unknown: false,
-    });
-    let fd = client.as_raw_fd();
+    let socket = root.join("wayland-probe");
+    let listener = UnixListener::bind(&socket).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    fixture
+        .handle
+        .insert_source(
+            calloop::generic::Generic::new(listener, calloop::Interest::READ, calloop::Mode::Level),
+            |_, listener, state| {
+                loop {
+                    match listener.accept() {
+                        Ok((client, _)) => state.server.state.niri.insert_client(NewClient {
+                            client,
+                            restricted: false,
+                            credentials_unknown: false,
+                        }),
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                        Err(error) => panic!("Wayland listener failed: {error}"),
+                    }
+                }
+                Ok(calloop::PostAction::Continue)
+            },
+        )
+        .unwrap();
     let class = "mesh.fixture.niri.chrome.probe";
     let mut command = Command::new(binary);
     command
@@ -64,26 +79,18 @@ fn a_fresh_chrome_profile_honors_its_wayland_class() {
         ))
         .arg(format!("--class={class}"))
         .arg("about:blank")
-        .env("WAYLAND_SOCKET", fd.to_string())
+        .env("WAYLAND_DISPLAY", &socket)
+        .env_remove("WAYLAND_SOCKET")
         .env_remove("DISPLAY")
         .env_remove("DBUS_SESSION_BUS_ADDRESS")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::from(fs::File::create(root.join("stderr")).unwrap()))
         .process_group(0);
-    unsafe {
-        command.pre_exec(move || {
-            if libc::fcntl(fd, libc::F_SETFD, 0) == -1 {
-                return Err(std::io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
-    let mut browser = Browser {
+    let browser = Browser {
         child: command.spawn().unwrap(),
         root,
     };
-    drop(client);
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         fixture
@@ -106,7 +113,7 @@ fn a_fresh_chrome_profile_honors_its_wayland_class() {
         if ids.iter().any(|id| id.as_deref() == Some(class)) {
             break;
         }
-        if browser.child.try_wait().unwrap().is_some() || Instant::now() >= deadline {
+        if Instant::now() >= deadline {
             panic!(
                 "Chrome class was not observed; app ids: {ids:?}; stderr: {}",
                 fs::read_to_string(browser.root.join("stderr")).unwrap_or_default()
