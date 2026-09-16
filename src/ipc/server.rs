@@ -1115,3 +1115,7 @@ mod namespace_ipc_guard {
 #[cfg(test)]
 #[path = "server/chrome_tests.rs"]
 mod namespace_ipc_chrome_identity;
+
+#[cfg(test)]
+#[path = "server/launch_tests.rs"]
+mod namespace_ipc_launch;
