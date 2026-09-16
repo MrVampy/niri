@@ -1111,3 +1111,7 @@ mod namespace_ipc_guard {
         assert!(!guard.matches(&state));
     }
 }
+
+#[cfg(test)]
+#[path = "server/chrome_tests.rs"]
+mod namespace_ipc_chrome_identity;
