@@ -4234,7 +4234,7 @@ impl State {
         if self.niri.touch_swipe_consumed {
             return;
         }
-        if self.niri.touch_points.len() == 2
+        if self.niri.touch_points.len() == 3
             && !handle.is_grabbed()
             && !self.niri.screenshot_ui.is_open()
             && !self.niri.window_mru_ui.is_open()
@@ -4243,7 +4243,7 @@ impl State {
             let centroid = self.touch_centroid();
             if let Some((output, _)) = self.niri.output_under(centroid) {
                 let output = output.clone();
-                // The client saw the first finger go down; the sequence is
+                // The client saw the first fingers go down; the sequence is
                 // now a compositor gesture, so it is cancelled for the client.
                 handle.cancel(self);
                 self.niri.touch_swipe = Some(TouchSwipe {
@@ -4512,7 +4512,9 @@ impl State {
             if cx * cx + cy * cy < 16. * 16. {
                 return;
             }
-            let axis = if cx.abs() > cy.abs() {
+            let axis = if self.niri.touch_points.len() >= 4 {
+                TouchSwipeAxis::Overview
+            } else if cx.abs() > cy.abs() {
                 TouchSwipeAxis::Horizontal
             } else {
                 TouchSwipeAxis::Vertical
@@ -4536,6 +4538,10 @@ impl State {
                         .layout
                         .workspace_switch_gesture_begin(&output, false);
                 }
+                TouchSwipeAxis::Overview => {
+                    self.niri.layout.overview_gesture_begin();
+                    self.niri.queue_redraw_all();
+                }
             }
         }
         let Some(swipe) = &self.niri.touch_swipe else {
@@ -4554,6 +4560,16 @@ impl State {
                 .layout
                 .workspace_switch_gesture_update(-delta.y, timestamp, false)
                 .is_some(),
+            Some(TouchSwipeAxis::Overview) => {
+                if let Some(true) = self
+                    .niri
+                    .layout
+                    .overview_gesture_update(-delta.y, timestamp)
+                {
+                    self.niri.queue_redraw_all();
+                }
+                false
+            }
             None => false,
         };
         if redraw {
@@ -4571,6 +4587,12 @@ impl State {
             }
             Some(TouchSwipeAxis::Vertical) => {
                 self.niri.layout.workspace_switch_gesture_end(Some(false))
+            }
+            Some(TouchSwipeAxis::Overview) => {
+                if self.niri.layout.overview_gesture_end() {
+                    self.niri.queue_redraw_all();
+                }
+                None
             }
             None => None,
         };

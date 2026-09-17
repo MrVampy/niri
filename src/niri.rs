@@ -194,10 +194,12 @@ const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
 // should be ~1.995 seconds.
 const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_millis(995));
 
-/// A two-finger swipe on a touchscreen driving the layout's continuous
+/// A three-finger swipe on a touchscreen driving the layout's continuous
 /// gestures: horizontal movement scrolls the column view, vertical movement
-/// switches workspaces. The axis is decided after the fingers moved far
-/// enough, the same threshold the touchpad's three-finger swipe uses.
+/// switches workspaces, and a fourth finger makes it the overview gesture.
+/// Two fingers stay with the client, since that is pinch and two-finger
+/// scrolling in applications. The axis is decided after the fingers moved
+/// far enough, the same threshold the touchpad's three-finger swipe uses.
 pub struct TouchSwipe {
     pub output: Output,
     pub last: Point<f64, Logical>,
@@ -209,6 +211,7 @@ pub struct TouchSwipe {
 pub enum TouchSwipeAxis {
     Horizontal,
     Vertical,
+    Overview,
 }
 
 pub struct Niri {
@@ -390,7 +393,7 @@ pub struct Niri {
     pub pointer_inside_hot_corner: bool,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
-    /// Live touch points by slot, so a second finger can turn the sequence
+    /// Live touch points by slot, so a third finger can turn the sequence
     /// into a swipe gesture instead of a client touch.
     pub touch_points: Vec<(TouchSlot, Point<f64, Logical>)>,
     pub touch_swipe: Option<TouchSwipe>,
