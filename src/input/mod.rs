@@ -4234,8 +4234,14 @@ impl State {
         if self.niri.touch_swipe_consumed {
             return;
         }
+        // The first finger on a client installs the seat's implicit
+        // touch-down grab, so being grabbed is the normal state here; only a
+        // drag in progress keeps the fingers with their client.
+        let dragging = handle
+            .with_grab(|_, grab| Self::is_dnd_grab(grab.as_any()))
+            .unwrap_or(false);
         if self.niri.touch_points.len() == 3
-            && !handle.is_grabbed()
+            && !dragging
             && !self.niri.screenshot_ui.is_open()
             && !self.niri.window_mru_ui.is_open()
             && !self.niri.layout.is_overview_open()
