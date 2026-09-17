@@ -48,7 +48,7 @@ use self::spatial_movement_grab::SpatialMovementGrab;
 use crate::dbus::freedesktop_a11y::KbMonBlock;
 use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
-use crate::niri::{CastTarget, PointerVisibility, State};
+use crate::niri::{CastTarget, PointerVisibility, State, TouchSwipe, TouchSwipeAxis};
 use crate::ui::mru::{WindowMru, WindowMruUi};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::{spawn, spawn_sh};
@@ -4229,6 +4229,35 @@ impl State {
         };
         let slot = evt.slot();
 
+        self.niri.touch_points.retain(|(other, _)| *other != slot);
+        self.niri.touch_points.push((slot, pos));
+        if self.niri.touch_swipe_consumed {
+            return;
+        }
+        if self.niri.touch_points.len() == 2
+            && !handle.is_grabbed()
+            && !self.niri.screenshot_ui.is_open()
+            && !self.niri.window_mru_ui.is_open()
+            && !self.niri.layout.is_overview_open()
+        {
+            let centroid = self.touch_centroid();
+            if let Some((output, _)) = self.niri.output_under(centroid) {
+                let output = output.clone();
+                // The client saw the first finger go down; the sequence is
+                // now a compositor gesture, so it is cancelled for the client.
+                handle.cancel(self);
+                self.niri.touch_swipe = Some(TouchSwipe {
+                    output,
+                    last: centroid,
+                    cumulative: (0., 0.),
+                    axis: None,
+                });
+                self.niri.touch_swipe_consumed = true;
+                self.niri.pointer_visibility = PointerVisibility::Disabled;
+                return;
+            }
+        }
+
         let serial = SERIAL_COUNTER.next_serial();
 
         let under = self.niri.contents_under(pos);
@@ -4357,6 +4386,17 @@ impl State {
         };
         let slot = evt.slot();
 
+        self.niri.touch_points.retain(|(other, _)| *other != slot);
+        if self.niri.touch_swipe_consumed {
+            if self.niri.touch_points.len() < 2 {
+                self.end_touch_swipe();
+            }
+            if self.niri.touch_points.is_empty() {
+                self.niri.touch_swipe_consumed = false;
+            }
+            return;
+        }
+
         if let Some(capture) = self.niri.screenshot_ui.pointer_up(Some(slot)) {
             if capture {
                 self.confirm_screenshot(true);
@@ -4383,6 +4423,19 @@ impl State {
             return;
         };
         let slot = evt.slot();
+
+        if let Some(point) = self
+            .niri
+            .touch_points
+            .iter_mut()
+            .find(|(other, _)| *other == slot)
+        {
+            point.1 = pos;
+        }
+        if self.niri.touch_swipe_consumed {
+            self.update_touch_swipe(Duration::from_micros(evt.time()));
+            return;
+        }
 
         if let Some(output) = self.niri.screenshot_ui.selection_output().cloned() {
             let geom = self.niri.global_space.output_geometry(&output).unwrap();
@@ -4426,7 +4479,104 @@ impl State {
         let Some(handle) = self.niri.seat.get_touch() else {
             return;
         };
+        self.niri.touch_points.clear();
+        if self.niri.touch_swipe_consumed {
+            self.end_touch_swipe();
+            self.niri.touch_swipe_consumed = false;
+            return;
+        }
         handle.cancel(self);
+    }
+
+    fn touch_centroid(&self) -> Point<f64, Logical> {
+        let points = &self.niri.touch_points;
+        let count = points.len().max(1) as f64;
+        let sum = points
+            .iter()
+            .fold((0., 0.), |(x, y), (_, point)| (x + point.x, y + point.y));
+        Point::from((sum.0 / count, sum.1 / count))
+    }
+
+    fn update_touch_swipe(&mut self, timestamp: Duration) {
+        let centroid = self.touch_centroid();
+        let Some(swipe) = &mut self.niri.touch_swipe else {
+            return;
+        };
+        let delta = centroid - swipe.last;
+        swipe.last = centroid;
+        swipe.cumulative.0 += delta.x;
+        swipe.cumulative.1 += delta.y;
+        let output = swipe.output.clone();
+        if swipe.axis.is_none() {
+            let (cx, cy) = swipe.cumulative;
+            if cx * cx + cy * cy < 16. * 16. {
+                return;
+            }
+            let axis = if cx.abs() > cy.abs() {
+                TouchSwipeAxis::Horizontal
+            } else {
+                TouchSwipeAxis::Vertical
+            };
+            swipe.axis = Some(axis);
+            match axis {
+                TouchSwipeAxis::Horizontal => {
+                    let ws_idx = self
+                        .niri
+                        .layout
+                        .monitor_for_output(&output)
+                        .map(|mon| mon.active_workspace_ref().id())
+                        .and_then(|id| self.niri.layout.find_workspace_by_id(id))
+                        .map(|(idx, _)| idx);
+                    self.niri
+                        .layout
+                        .view_offset_gesture_begin(&output, ws_idx, false);
+                }
+                TouchSwipeAxis::Vertical => {
+                    self.niri
+                        .layout
+                        .workspace_switch_gesture_begin(&output, false);
+                }
+            }
+        }
+        let Some(swipe) = &self.niri.touch_swipe else {
+            return;
+        };
+        // Content follows the fingers: moving them left scrolls the view
+        // right, moving them up brings the workspace below into view.
+        let redraw = match swipe.axis {
+            Some(TouchSwipeAxis::Horizontal) => self
+                .niri
+                .layout
+                .view_offset_gesture_update(-delta.x, timestamp, false)
+                .is_some(),
+            Some(TouchSwipeAxis::Vertical) => self
+                .niri
+                .layout
+                .workspace_switch_gesture_update(-delta.y, timestamp, false)
+                .is_some(),
+            None => false,
+        };
+        if redraw {
+            self.niri.queue_redraw(&output);
+        }
+    }
+
+    fn end_touch_swipe(&mut self) {
+        let Some(swipe) = self.niri.touch_swipe.take() else {
+            return;
+        };
+        let ended = match swipe.axis {
+            Some(TouchSwipeAxis::Horizontal) => {
+                self.niri.layout.view_offset_gesture_end(Some(false))
+            }
+            Some(TouchSwipeAxis::Vertical) => {
+                self.niri.layout.workspace_switch_gesture_end(Some(false))
+            }
+            None => None,
+        };
+        if let Some(output) = ended {
+            self.niri.queue_redraw(&output);
+        }
     }
 
     fn on_switch_toggle<I: InputBackend>(&mut self, evt: I::SwitchToggleEvent) {

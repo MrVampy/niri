@@ -1,5 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
+
+use smithay::backend::input::TouchSlot;
 use std::ffi::OsString;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
@@ -192,6 +194,23 @@ const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
 // should be ~1.995 seconds.
 const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_millis(995));
 
+/// A two-finger swipe on a touchscreen driving the layout's continuous
+/// gestures: horizontal movement scrolls the column view, vertical movement
+/// switches workspaces. The axis is decided after the fingers moved far
+/// enough, the same threshold the touchpad's three-finger swipe uses.
+pub struct TouchSwipe {
+    pub output: Output,
+    pub last: Point<f64, Logical>,
+    pub cumulative: (f64, f64),
+    pub axis: Option<TouchSwipeAxis>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TouchSwipeAxis {
+    Horizontal,
+    Vertical,
+}
+
 pub struct Niri {
     pub config: Rc<RefCell<Config>>,
 
@@ -371,6 +390,13 @@ pub struct Niri {
     pub pointer_inside_hot_corner: bool,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
+    /// Live touch points by slot, so a second finger can turn the sequence
+    /// into a swipe gesture instead of a client touch.
+    pub touch_points: Vec<(TouchSlot, Point<f64, Logical>)>,
+    pub touch_swipe: Option<TouchSwipe>,
+    /// Set once a swipe has consumed a touch sequence; the client is not
+    /// told about the remaining fingers lifting.
+    pub touch_swipe_consumed: bool,
     pub overview_scroll_swipe_gesture: ScrollSwipeGesture,
     pub vertical_wheel_tracker: ScrollTracker,
     pub horizontal_wheel_tracker: ScrollTracker,
@@ -2594,6 +2620,9 @@ impl Niri {
             pointer_inside_hot_corner: false,
             tablet_cursor_location: None,
             gesture_swipe_3f_cumulative: None,
+            touch_points: Vec::new(),
+            touch_swipe: None,
+            touch_swipe_consumed: false,
             overview_scroll_swipe_gesture: ScrollSwipeGesture::new(),
             vertical_wheel_tracker: ScrollTracker::new(120),
             horizontal_wheel_tracker: ScrollTracker::new(120),
