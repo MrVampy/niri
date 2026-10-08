@@ -460,6 +460,17 @@ where
 }
 
 impl Config {
+    pub fn restart_required(&self, previous: &Self) -> Vec<String> {
+        let mut fields = Vec::new();
+        if self.debug.render_drm_device != previous.debug.render_drm_device {
+            fields.push("debug.render-drm-device".into());
+        }
+        if self.debug.disable_monitor_names != previous.debug.disable_monitor_names {
+            fields.push("debug.disable-monitor-names".into());
+        }
+        fields
+    }
+
     pub fn load_default() -> Self {
         let res = Config::parse(
             Path::new("default-config.kdl"),

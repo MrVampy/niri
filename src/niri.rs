@@ -1455,7 +1455,27 @@ impl State {
         }
     }
 
-    pub fn reload_config(&mut self, config: Result<Config, ()>) {
+    pub fn config_change(&self, config: &mut Config) -> niri_ipc::ConfigChange {
+        let previous = self.niri.config.borrow();
+        let fields = config.restart_required(&previous);
+        if !fields.is_empty() {
+            return niri_ipc::ConfigChange::Restart { fields };
+        }
+        let environment = mem::take(&mut config.environment);
+        let outputs = mem::replace(&mut config.outputs, previous.outputs.clone());
+        let unchanged = *config == *previous
+            && environment == *CHILD_ENV.read().unwrap()
+            && outputs == self.niri.config_file_output_config;
+        config.environment = environment;
+        config.outputs = outputs;
+        if unchanged {
+            niri_ipc::ConfigChange::Unchanged
+        } else {
+            niri_ipc::ConfigChange::Reload
+        }
+    }
+
+    pub fn reload_config(&mut self, config: Result<Config, ()>) -> bool {
         let _span = tracy_client::span!("State::reload_config");
 
         let mut config = match config {
@@ -1467,11 +1487,25 @@ impl State {
                 #[cfg(feature = "dbus")]
                 self.niri.a11y_announce_config_error();
 
-                return;
+                return false;
             }
         };
 
+        if !config
+            .restart_required(&self.niri.config.borrow())
+            .is_empty()
+        {
+            self.niri.config_error_notification.show();
+            self.niri.queue_redraw_all();
+            return false;
+        }
+
         self.niri.config_error_notification.hide();
+
+        if self.config_change(&mut config) == niri_ipc::ConfigChange::Unchanged {
+            self.niri.queue_redraw_all();
+            return true;
+        }
 
         // Find & orphan removed named workspaces.
         let mut removed_workspaces: Vec<String> = vec![];
@@ -1752,6 +1786,7 @@ impl State {
         // clients will use the new xdg-decoration setting.
 
         self.niri.queue_redraw_all();
+        true
     }
 
     pub fn reload_output_config(&mut self) {

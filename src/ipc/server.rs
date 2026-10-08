@@ -284,6 +284,31 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> an
 
 async fn process(ctx: &ClientCtx, request: Request) -> Reply {
     let response = match request {
+        Request::Config {
+            path,
+            correlation,
+            apply,
+        } => {
+            if correlation.is_empty()
+                || correlation.len() > 128
+                || !correlation
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+            {
+                return Err("invalid config correlation".into());
+            }
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let Some(watcher) = &state.niri.config_file_watcher else {
+                    let _ = tx.send_blocking(Err("configuration watcher unavailable".into()));
+                    return;
+                };
+                if let Err(error) = watcher.request_config(path, correlation, apply, tx.clone()) {
+                    let _ = tx.send_blocking(Err(error));
+                }
+            });
+            return rx.recv().await.map_err(|_| "configuration watcher ended")?;
+        }
         Request::ReturnError => return Err(String::from("example compositor error")),
         Request::Version => Response::Version(version()),
         Request::Outputs => {
@@ -1016,12 +1041,19 @@ impl State {
     }
 
     pub fn ipc_config_loaded(&mut self, failed: bool) {
+        self.ipc_config_loaded_correlated(failed, None);
+    }
+
+    pub fn ipc_config_loaded_correlated(&mut self, failed: bool, correlation: Option<String>) {
         let Some(server) = &self.niri.ipc_server else {
             return;
         };
         let mut state = server.event_stream_state.borrow_mut();
 
-        let event = Event::ConfigLoaded { failed };
+        let event = Event::ConfigLoaded {
+            failed,
+            correlation,
+        };
         state.apply(event.clone());
         server.send_event(event);
     }
@@ -1041,6 +1073,10 @@ impl State {
 #[cfg(test)]
 #[path = "server/outputs_tests.rs"]
 mod namespace_ipc_outputs;
+
+#[cfg(test)]
+#[path = "server/config_tests.rs"]
+mod namespace_ipc_config;
 
 #[cfg(test)]
 mod namespace_ipc_barrier {

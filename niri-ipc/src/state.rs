@@ -84,6 +84,8 @@ pub struct OverviewState {
 /// The config state communicated over the event stream.
 #[derive(Debug, Default)]
 pub struct ConfigState {
+    #[allow(missing_docs)]
+    pub correlation: Option<String>,
     /// Whether the last config load attempt had failed.
     pub failed: bool,
 }
@@ -312,14 +314,19 @@ impl EventStreamStatePart for OverviewState {
 impl EventStreamStatePart for ConfigState {
     fn replicate(&self) -> Vec<Event> {
         vec![Event::ConfigLoaded {
+            correlation: self.correlation.clone(),
             failed: self.failed,
         }]
     }
 
     fn apply(&mut self, event: Event) -> Option<Event> {
         match event {
-            Event::ConfigLoaded { failed } => {
+            Event::ConfigLoaded {
+                failed,
+                correlation,
+            } => {
                 self.failed = failed;
+                self.correlation = correlation;
             }
             event => return Some(event),
         }

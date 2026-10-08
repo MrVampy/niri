@@ -14,7 +14,32 @@ use crate::niri::State;
 const POLLING_INTERVAL: Duration = Duration::from_millis(500);
 
 pub struct Watcher {
-    load_config: mpsc::Sender<Option<String>>,
+    load_config: mpsc::Sender<LoadRequest>,
+}
+
+#[derive(Debug)]
+struct LoadRequest {
+    path: Option<String>,
+    apply: bool,
+    correlation: Option<String>,
+    reply: Option<async_channel::Sender<niri_ipc::Reply>>,
+}
+
+impl LoadRequest {
+    fn automatic(path: Option<String>) -> Self {
+        Self {
+            path,
+            apply: true,
+            correlation: None,
+            reply: None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ConfigUpdate {
+    config: Result<Config, ()>,
+    request: LoadRequest,
 }
 
 struct WatcherInner {
@@ -56,9 +81,9 @@ impl Watcher {
         path: ConfigPath,
         includes: Vec<PathBuf>,
         mut process: impl FnMut(&ConfigPath) -> ConfigParseResult<Config, ()> + Send + 'static,
-        changed: SyncSender<Result<Config, ()>>,
+        changed: SyncSender<ConfigUpdate>,
     ) -> Self {
-        let (load_config, load_config_rx) = mpsc::channel();
+        let (load_config, load_config_rx) = mpsc::channel::<LoadRequest>();
 
         thread::Builder::new()
             .name(format!("Filesystem Watcher for {path:?}"))
@@ -66,33 +91,42 @@ impl Watcher {
                 let mut inner = WatcherInner::new(path, includes);
 
                 loop {
-                    let mut should_load = match load_config_rx.recv_timeout(POLLING_INTERVAL) {
-                        Ok(path) => {
-                            if let Some(path) = path {
-                                inner = WatcherInner::new(
-                                    ConfigPath::Explicit(PathBuf::from(path)),
-                                    Vec::new(),
-                                );
-                            }
-                            true
-                        }
+                    let request = match load_config_rx.recv_timeout(POLLING_INTERVAL) {
+                        Ok(request) => Some(request),
                         Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                        Err(mpsc::RecvTimeoutError::Timeout) => false,
+                        Err(mpsc::RecvTimeoutError::Timeout) => None,
                     };
-
-                    match inner.check() {
-                        CheckResult::Missing => continue,
-                        CheckResult::Unchanged => (),
-                        CheckResult::Changed => {
-                            trace!("config file changed");
-                            should_load = true;
-                        }
-                    }
-
-                    if should_load {
+                    let observed_change = inner.check() == CheckResult::Changed;
+                    if observed_change && request.as_ref().is_some_and(|request| !request.apply) {
                         let res = process(&inner.path);
-
-                        if let Err(err) = changed.send(res.config) {
+                        if changed
+                            .send(ConfigUpdate {
+                                config: res.config,
+                                request: LoadRequest::automatic(None),
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                        inner.set_includes(res.includes);
+                    }
+                    if let Some(request) =
+                        request.or_else(|| observed_change.then(|| LoadRequest::automatic(None)))
+                    {
+                        let path = request
+                            .path
+                            .as_ref()
+                            .map(|path| ConfigPath::Explicit(PathBuf::from(path)))
+                            .unwrap_or_else(|| inner.path.clone());
+                        if request.apply && request.path.is_some() {
+                            inner = WatcherInner::new(path.clone(), Vec::new());
+                        }
+                        let res = process(&path);
+                        let apply = request.apply;
+                        if let Err(err) = changed.send(ConfigUpdate {
+                            config: res.config,
+                            request,
+                        }) {
                             warn!("error sending change notification: {err:?}");
                             break;
                         }
@@ -102,7 +136,9 @@ impl Watcher {
                         // remain unnoticed by the watcher. Not sure there's any good way around it
                         // though since we don't know the final set of includes until the config is
                         // parsed.
-                        inner.set_includes(res.includes);
+                        if apply {
+                            inner.set_includes(res.includes);
+                        }
                     }
                 }
 
@@ -114,7 +150,24 @@ impl Watcher {
     }
 
     pub fn load_config(&self, path: Option<String>) {
-        let _ = self.load_config.send(path);
+        let _ = self.load_config.send(LoadRequest::automatic(path));
+    }
+
+    pub fn request_config(
+        &self,
+        path: String,
+        correlation: String,
+        apply: bool,
+        reply: async_channel::Sender<niri_ipc::Reply>,
+    ) -> Result<(), String> {
+        self.load_config
+            .send(LoadRequest {
+                path: Some(path),
+                apply,
+                correlation: Some(correlation),
+                reply: Some(reply),
+            })
+            .map_err(|_| "configuration watcher ended".into())
     }
 }
 
@@ -200,11 +253,30 @@ pub fn setup(state: &mut State, config_path: &ConfigPath, includes: Vec<PathBuf>
         .event_loop
         .insert_source(
             rx,
-            |event: calloop::channel::Event<Result<Config, ()>>, _, state| match event {
-                calloop::channel::Event::Msg(config) => {
-                    let failed = config.is_err();
-                    state.reload_config(config);
-                    state.ipc_config_loaded(failed);
+            |event: calloop::channel::Event<ConfigUpdate>, _, state| match event {
+                calloop::channel::Event::Msg(ConfigUpdate { config, request }) => {
+                    let reply = match config {
+                        Ok(mut config) => {
+                            let change = state.config_change(&mut config);
+                            if request.apply {
+                                let failed =
+                                    matches!(change, niri_ipc::ConfigChange::Restart { .. })
+                                        || !state.reload_config(Ok(config));
+                                state.ipc_config_loaded_correlated(failed, request.correlation);
+                            }
+                            Ok(niri_ipc::Response::Config(change))
+                        }
+                        Err(()) => {
+                            if request.apply {
+                                state.reload_config(Err(()));
+                                state.ipc_config_loaded_correlated(true, request.correlation);
+                            }
+                            Err("configuration could not be parsed".into())
+                        }
+                    };
+                    if let Some(sender) = request.reply {
+                        let _ = sender.send_blocking(reply);
+                    }
                 }
                 calloop::channel::Event::Closed => (),
             },
@@ -341,8 +413,19 @@ mod tests {
 
     impl TestUtil {
         // Ensures that mtime is different between writes in the tests.
-        fn pass_time(&self) {
-            thread::sleep(Duration::from_millis(50));
+        fn pass_time(&mut self) {
+            for props in self.watcher.last_props.iter_mut().chain(
+                self.watcher
+                    .includes
+                    .values_mut()
+                    .filter_map(Option::as_mut),
+            ) {
+                if let Ok(file) = File::open(&props.canonical) {
+                    file.set_times(FileTimes::new().set_modified(SystemTime::UNIX_EPOCH))
+                        .unwrap();
+                    props.mtime = SystemTime::UNIX_EPOCH;
+                }
+            }
         }
 
         fn assert_unchanged(&mut self) {

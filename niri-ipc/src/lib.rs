@@ -65,6 +65,12 @@ pub mod state;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum Request {
+    #[allow(missing_docs)]
+    Config {
+        path: String,
+        correlation: String,
+        apply: bool,
+    },
     /// Request the version string for the running niri instance.
     Version,
     /// Request information about connected outputs.
@@ -147,6 +153,8 @@ pub type Reply = Result<Response, String>;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum Response {
+    #[allow(missing_docs)]
+    Config(ConfigChange),
     /// A request that does not need a response was handled successfully.
     Handled,
     /// Whether a guarded action was accepted; this is not proof of its postcondition.
@@ -197,6 +205,15 @@ pub enum Response {
 pub struct Overview {
     /// Whether the overview is currently open.
     pub is_open: bool,
+}
+
+#[allow(missing_docs)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum ConfigChange {
+    Unchanged,
+    Reload,
+    Restart { fields: Vec<String> },
 }
 
 /// Color picked from the screen.
@@ -1910,6 +1927,8 @@ pub enum Event {
     /// You will always receive this event when connecting to the event stream, indicating the last
     /// config load attempt.
     ConfigLoaded {
+        #[allow(missing_docs)]
+        correlation: Option<String>,
         /// Whether the loading failed.
         ///
         /// For example, the config file couldn't be parsed.
