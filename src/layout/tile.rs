@@ -38,6 +38,7 @@ use crate::utils::{
 /// Toplevel window with decorations.
 #[derive(Debug)]
 pub struct Tile<W: LayoutElement> {
+    pub(super) initial_tiled_insertion: Option<niri_config::window_rule::TiledInsertion>,
     /// The toplevel window itself.
     window: W,
 
@@ -187,8 +188,10 @@ impl<W: LayoutElement> Tile<W> {
         let focus_ring_config = options.layout.focus_ring.merged_with(&rules.focus_ring);
         let shadow_config = options.layout.shadow.merged_with(&rules.shadow);
         let sizing_mode = window.sizing_mode();
+        let initial_tiled_insertion = rules.open_tiled_insertion.clone();
 
         Self {
+            initial_tiled_insertion,
             window,
             border: FocusRing::new(border_config.into()),
             focus_ring: FocusRing::new(focus_ring_config),

@@ -610,8 +610,9 @@ impl<W: LayoutElement> Workspace<W> {
         self.enter_output_for_window(tile.window());
         tile.restore_to_floating = is_floating;
 
+        let insertion = tile.initial_tiled_insertion.take();
         if !is_floating {
-            if let Some(insertion) = tile.window().rules().open_tiled_insertion.clone() {
+            if let Some(insertion) = insertion {
                 let activate = activate.map_smart(|| false);
                 self.scrolling
                     .add_planned_tile(&insertion, tile, activate, width, is_full_width);

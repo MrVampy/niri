@@ -173,3 +173,28 @@ fn every_stacked_arrival_permutation_inserts_above_or_below_present_members() {
         );
     }
 }
+
+#[test]
+fn a_later_owner_move_does_not_reapply_the_mapping_plan() {
+    let columns = vec![vec![1], vec![2], vec![3]];
+    let mut layout = check_ops([Op::AddOutput(1)]);
+    for id in 1..=3 {
+        add(&mut layout, id, &columns);
+    }
+    layout.move_to_workspace(Some(&3), 1, ActivateWindow::No);
+    layout.move_to_workspace(Some(&3), 0, ActivateWindow::No);
+    layout.verify_invariants();
+    assert_eq!(
+        positions(&layout),
+        vec![(1, (1, 1)), (3, (2, 1)), (2, (3, 1))]
+    );
+    assert_eq!(
+        *layout
+            .active_workspace()
+            .unwrap()
+            .active_window()
+            .unwrap()
+            .id(),
+        1
+    );
+}
