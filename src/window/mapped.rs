@@ -275,6 +275,9 @@ impl Mapped {
     pub fn new(window: Window, rules: ResolvedWindowRules, hook: HookId, config: &Config) -> Self {
         let surface = window.wl_surface().expect("no X11 support");
         let credentials = get_credentials_for_surface(&surface);
+        let windowed_fullscreen =
+            rules.open_windowed_fullscreen == Some(true) && rules.open_fullscreen != Some(true);
+        let windowed_maximized = windowed_fullscreen && rules.open_maximized_to_edges == Some(true);
         let mut rv = Self {
             window,
             id: MappedId::next(),
@@ -301,11 +304,11 @@ impl Mapped {
             pending_transactions: Vec::new(),
             interactive_resize: None,
             last_interactive_resize_start: Cell::new(None),
-            is_windowed_fullscreen: false,
-            is_pending_windowed_fullscreen: false,
+            is_windowed_fullscreen: windowed_fullscreen,
+            is_pending_windowed_fullscreen: windowed_fullscreen,
             uncommitted_windowed_fullscreen: Vec::new(),
-            is_maximized: false,
-            is_pending_maximized: false,
+            is_maximized: windowed_maximized,
+            is_pending_maximized: windowed_maximized,
             uncommitted_maximized: Vec::new(),
             focus_timestamp: None,
         };

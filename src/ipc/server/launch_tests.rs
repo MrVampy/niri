@@ -16,6 +16,66 @@ fn map(fixture: &mut Fixture, app_id: &str) {
     fixture.niri_state().ipc_refresh_layout();
 }
 
+#[test]
+fn windowed_fullscreen_modes_are_visible_in_the_first_mapping_event() {
+    for maximized in [false, true] {
+        let config = niri_config::Config::parse_mem(&format!(
+            r#"
+            workspace "work" {{ open-on-output "headless-1"; }}
+            workspace "other" {{ open-on-output "headless-1"; }}
+            window-rule {{
+                match app-id="^owner$"
+                open-on-workspace "other"
+                open-focused true
+            }}
+            window-rule {{
+                match app-id="^restored$"
+                open-on-workspace "work"
+                open-focused false
+                default-column-width {{ proportion 0.5; }}
+                open-maximized-to-edges {maximized}
+                open-fullscreen false
+                open-windowed-fullscreen true
+                open-tiled-insertion {{}}
+            }}
+        "#
+        ))
+        .unwrap();
+        let mut fixture = Fixture::with_config(config);
+        fixture.add_output(1, (1920, 1080));
+        map(&mut fixture, "owner");
+        let owner = windows(&mut fixture).remove(0);
+        let (events, received) = async_channel::bounded(EVENT_STREAM_BUFFER_SIZE);
+        let (disconnect, _) = async_channel::bounded(1);
+        fixture
+            .niri()
+            .ipc_server
+            .as_ref()
+            .unwrap()
+            .event_streams
+            .borrow_mut()
+            .push(EventStreamSender { events, disconnect });
+        map(&mut fixture, "restored");
+        let mut first_mapping = None;
+        while let Ok(event) = received.try_recv() {
+            if let Event::WindowOpenedOrChanged { window } = event {
+                if window.app_id.as_deref() == Some("restored") && first_mapping.is_none() {
+                    first_mapping = Some(window);
+                }
+            }
+        }
+        let restored = first_mapping.unwrap();
+        assert!(restored.is_windowed_fullscreen);
+        assert_eq!(restored.is_maximized, maximized);
+        assert!(!restored.is_fullscreen);
+        assert!(!restored.is_focused);
+        assert_eq!(restored.layout.pos_in_scrolling_layout, Some((1, 1)));
+        assert!(windows(&mut fixture)
+            .iter()
+            .any(|window| window.id == owner.id && window.is_focused));
+    }
+}
+
 fn windows(fixture: &mut Fixture) -> Vec<niri_ipc::Window> {
     fixture
         .niri()

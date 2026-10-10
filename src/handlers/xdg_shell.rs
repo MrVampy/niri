@@ -1127,8 +1127,10 @@ impl State {
             is_pending_maximized = (*wants_maximized && rules.open_maximized_to_edges.is_none())
                 || rules.open_maximized_to_edges == Some(true);
 
-            if (wants_fullscreen.is_some() && rules.open_fullscreen.is_none())
-                || rules.open_fullscreen == Some(true)
+            if ((wants_fullscreen.is_some() && rules.open_fullscreen.is_none())
+                || rules.open_fullscreen == Some(true))
+                && (rules.open_windowed_fullscreen != Some(true)
+                    || rules.open_fullscreen == Some(true))
             {
                 toplevel.with_pending_state(|state| {
                     state.states.set(xdg_toplevel::State::Fullscreen);
@@ -1159,6 +1161,12 @@ impl State {
                 is_floating,
                 &rules,
             );
+            if rules.open_windowed_fullscreen == Some(true) && rules.open_fullscreen != Some(true) {
+                toplevel.with_pending_state(|state| {
+                    state.states.set(xdg_toplevel::State::Fullscreen);
+                    state.states.unset(xdg_toplevel::State::Maximized);
+                });
+            }
         }
 
         // Set the tiled state for the initial configure.

@@ -67,6 +67,7 @@ pub struct ResolvedWindowRules {
 
     /// Whether the window should open fullscreen.
     pub open_fullscreen: Option<bool>,
+    pub open_windowed_fullscreen: Option<bool>,
 
     /// Whether the window should open floating.
     pub open_floating: Option<bool>,
@@ -252,6 +253,9 @@ impl ResolvedWindowRules {
 
                 if let Some(x) = rule.open_fullscreen {
                     resolved.open_fullscreen = Some(x);
+                }
+                if let Some(x) = rule.open_windowed_fullscreen {
+                    resolved.open_windowed_fullscreen = Some(x);
                 }
 
                 if let Some(x) = rule.open_floating {
