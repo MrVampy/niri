@@ -57,6 +57,7 @@ pub struct ResolvedWindowRules {
 
     /// Workspace to open this window on.
     pub open_on_workspace: Option<String>,
+    pub open_tiled_insertion: Option<niri_config::window_rule::TiledInsertion>,
 
     /// Whether the window should open full-width.
     pub open_maximized: Option<bool>,
@@ -235,6 +236,10 @@ impl ResolvedWindowRules {
 
                 if let Some(x) = rule.open_on_workspace.as_deref() {
                     open_on_workspace = Some(x);
+                }
+
+                if let Some(x) = &rule.open_tiled_insertion {
+                    resolved.open_tiled_insertion = Some(x.clone());
                 }
 
                 if let Some(x) = rule.open_maximized {

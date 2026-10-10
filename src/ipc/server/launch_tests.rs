@@ -32,6 +32,118 @@ fn windows(fixture: &mut Fixture) -> Vec<niri_ipc::Window> {
 }
 
 #[test]
+fn a_configured_cohort_maps_in_every_order_from_its_incarnation_references() {
+    for order in [
+        [1, 2, 3],
+        [1, 3, 2],
+        [2, 1, 3],
+        [2, 3, 1],
+        [3, 1, 2],
+        [3, 2, 1],
+    ] {
+        let config = niri_config::Config::parse_mem(
+            r#"
+            workspace "work" { open-on-output "headless-1"; }
+            workspace "other" { open-on-output "headless-1"; }
+            window-rule {
+                match app-id="^owner$"
+                open-on-workspace "other"
+                open-focused true
+            }
+            window-rule {
+                match app-id="^managed[.]1[.]epoch$"
+                open-on-workspace "work"
+                open-focused false
+                open-tiled-insertion {
+                    right app-id="^managed[.]2[.]epoch$"
+                    right app-id="^managed[.]3[.]epoch$"
+                }
+            }
+            window-rule {
+                match app-id="^managed[.]2[.]epoch$"
+                open-on-workspace "work"
+                open-focused false
+                open-tiled-insertion {
+                    left app-id="^managed[.]1[.]epoch$"
+                    right app-id="^managed[.]3[.]epoch$"
+                }
+            }
+            window-rule {
+                match app-id="^managed[.]3[.]epoch$"
+                open-on-workspace "work"
+                open-focused false
+                open-tiled-insertion {
+                    left app-id="^managed[.]2[.]epoch$"
+                    left app-id="^managed[.]1[.]epoch$"
+                }
+            }
+            "#,
+        )
+        .unwrap();
+        let mut fixture = Fixture::with_config(config);
+        fixture.add_output(1, (1920, 1080));
+        map(&mut fixture, "owner");
+        let owner = windows(&mut fixture).remove(0);
+        let (events, received) = async_channel::bounded(EVENT_STREAM_BUFFER_SIZE);
+        let (disconnect, _) = async_channel::bounded(1);
+        fixture
+            .niri()
+            .ipc_server
+            .as_ref()
+            .unwrap()
+            .event_streams
+            .borrow_mut()
+            .push(EventStreamSender { events, disconnect });
+        let mut configured = Vec::new();
+        for id in 1..=3 {
+            let client = fixture.add_client();
+            let window = fixture.client(client).create_window();
+            window
+                .xdg_toplevel
+                .set_app_id(format!("managed.{id}.epoch"));
+            let surface = window.surface.clone();
+            window.commit();
+            fixture.roundtrip(client);
+            configured.push((client, surface));
+        }
+        assert_eq!(windows(&mut fixture).len(), 1);
+        for id in order {
+            let (client, surface) = &configured[id - 1];
+            let window = fixture.client(*client).window(surface);
+            window.attach_new_buffer();
+            window.ack_last_and_commit();
+            fixture.double_roundtrip(*client);
+            fixture.niri_complete_animations();
+            fixture.niri_state().ipc_refresh_layout();
+            assert!(windows(&mut fixture)
+                .iter()
+                .any(|window| window.id == owner.id && window.is_focused));
+        }
+        let mut restored: Vec<_> = windows(&mut fixture)
+            .into_iter()
+            .filter(|window| window.id != owner.id)
+            .collect();
+        restored.sort_by_key(|window| window.layout.pos_in_scrolling_layout);
+        assert_eq!(
+            restored
+                .iter()
+                .map(|window| window.app_id.as_deref().unwrap())
+                .collect::<Vec<_>>(),
+            ["managed.1.epoch", "managed.2.epoch", "managed.3.epoch"]
+        );
+        assert!(restored
+            .iter()
+            .all(|window| window.workspace_id == restored[0].workspace_id && !window.is_focused));
+        assert_ne!(restored[0].workspace_id, owner.workspace_id);
+        while let Ok(event) = received.try_recv() {
+            if let Event::WindowFocusChanged { id } = event {
+                assert_eq!(id, Some(owner.id));
+            }
+        }
+    }
+}
+
+#[test]
 fn routed_launch_beside_an_unfocused_anchor_preserves_the_owners_workspace() {
     let config = niri_config::Config::parse_mem(
         r#"

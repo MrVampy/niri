@@ -24,6 +24,8 @@ pub struct WindowRule {
     pub open_on_output: Option<String>,
     #[knuffel(child, unwrap(argument))]
     pub open_on_workspace: Option<String>,
+    #[knuffel(child)]
+    pub open_tiled_insertion: Option<TiledInsertion>,
     #[knuffel(child, unwrap(argument))]
     pub open_maximized: Option<bool>,
     #[knuffel(child, unwrap(argument))]
@@ -79,6 +81,28 @@ pub struct WindowRule {
     pub background_effect: BackgroundEffectRule,
     #[knuffel(child, default)]
     pub popups: PopupsRule,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+pub struct TiledInsertion {
+    #[knuffel(children(name = "left"))]
+    pub left: Vec<InsertionReference>,
+    #[knuffel(children(name = "right"))]
+    pub right: Vec<InsertionReference>,
+    #[knuffel(children(name = "above"))]
+    pub above: Vec<InsertionReference>,
+    #[knuffel(children(name = "below"))]
+    pub below: Vec<InsertionReference>,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+pub struct InsertionReference {
+    #[knuffel(property)]
+    pub id: Option<u64>,
+    #[knuffel(property, str)]
+    pub app_id: Option<RegexEq>,
+    #[knuffel(property, str)]
+    pub title: Option<RegexEq>,
 }
 
 /// Rules for popup surfaces.

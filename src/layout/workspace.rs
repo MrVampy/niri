@@ -610,6 +610,18 @@ impl<W: LayoutElement> Workspace<W> {
         self.enter_output_for_window(tile.window());
         tile.restore_to_floating = is_floating;
 
+        if !is_floating {
+            if let Some(insertion) = tile.window().rules().open_tiled_insertion.clone() {
+                let activate = activate.map_smart(|| false);
+                self.scrolling
+                    .add_planned_tile(&insertion, tile, activate, width, is_full_width);
+                if activate {
+                    self.floating_is_active = FloatingActive::No;
+                }
+                return;
+            }
+        }
+
         match target {
             WorkspaceAddWindowTarget::Auto => {
                 // Don't steal focus from an active fullscreen window.

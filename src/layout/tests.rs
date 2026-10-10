@@ -17,6 +17,8 @@ mod animations;
 mod fullscreen;
 #[path = "tests/targeted.rs"]
 mod namespace_ipc_targeted;
+#[path = "tests/planned_insertion.rs"]
+mod namespace_ipc_planned_insertion;
 
 impl<W: LayoutElement> Default for Layout<W> {
     fn default() -> Self {
@@ -152,6 +154,13 @@ impl TestWindow {
 }
 
 impl LayoutElement for TestWindow {
+    fn matches_insertion_reference(
+        &self,
+        reference: &niri_config::window_rule::InsertionReference,
+    ) -> bool {
+        reference.id == Some(self.0.id as u64)
+    }
+
     type Id = usize;
 
     fn id(&self) -> &Self::Id {

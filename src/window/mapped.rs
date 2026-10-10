@@ -620,6 +620,26 @@ impl Drop for Mapped {
 }
 
 impl LayoutElement for Mapped {
+    fn matches_insertion_reference(
+        &self,
+        reference: &niri_config::window_rule::InsertionReference,
+    ) -> bool {
+        if reference.id.is_some_and(|id| id != self.id.get()) {
+            return false;
+        }
+        with_toplevel_role(self.toplevel(), |role| {
+            reference.app_id.as_ref().is_none_or(|pattern| {
+                role.app_id
+                    .as_ref()
+                    .is_some_and(|id| pattern.0.is_match(id))
+            }) && reference.title.as_ref().is_none_or(|pattern| {
+                role.title
+                    .as_ref()
+                    .is_some_and(|title| pattern.0.is_match(title))
+            }) && (reference.id.is_some() || reference.app_id.is_some())
+        })
+    }
+
     type Id = Window;
 
     fn id(&self) -> &Self::Id {

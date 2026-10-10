@@ -319,6 +319,12 @@ pub trait LayoutElement {
     fn is_child_of(&self, parent: &Self) -> bool;
 
     fn rules(&self) -> &ResolvedWindowRules;
+    fn matches_insertion_reference(
+        &self,
+        _reference: &niri_config::window_rule::InsertionReference,
+    ) -> bool {
+        false
+    }
 
     /// Runs periodic clean-up tasks.
     fn refresh(&self);
